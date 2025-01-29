@@ -1,0 +1,26 @@
+plan : 
+
+get amazon page full source 
+
+get csrf token from span element id="nav-global-location-data-modal-action" which contains csrf token needed to get model html 
+
+send request to get modal html, it contains a CSRF token needed to make request to change zip code 
+
+make request to change zipcode 
+
+get amazon page again with same cookie and session 
+
+-----
+
+todo: 
+
+also get the offers page 
+parse product and offers pages 
+
+test with different zip codes and compare results of each ZIP code 
+
+
+turn into clear class 
+
+test few zipcodeson VM 
+
