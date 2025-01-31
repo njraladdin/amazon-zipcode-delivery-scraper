@@ -91,11 +91,11 @@ async def scrape_product(request: ScrapeRequest):
 if __name__ == "__main__":
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    print(f"\nServer running at: http://{local_ip}:8080")
+    print(f"\nServer running at: http://{local_ip}:80")
     uvicorn.run(
         app, 
         host="0.0.0.0", 
-        port=8080,        # Changed to 8080 which doesn't require sudo
+        port=80,        # Changed from 8000 to 80
         log_level="info",
         access_log=True
     )
