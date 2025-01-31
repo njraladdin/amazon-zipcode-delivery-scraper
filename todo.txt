@@ -21,8 +21,11 @@ turn into clear class, done
 make two requets to offers page, one with all products adn other with prime eligible filter, done 
 consolidate all data, done 
 fix parsing to be as in requirements, done 
+create api endpoint that receives asin and list of zipcode and returns the final data json, done 
+add check to see if zipcode was actually changed succefully on page, done 
+add proxy usage, done 
 
-create api endpoint that receives asin and list of zipcode and returns the final data json 
+work concurrently on multiple zipcodes
 
-test few zipcodes on VM 
+deploy on VM 
 

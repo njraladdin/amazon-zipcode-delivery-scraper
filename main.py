@@ -1,5 +1,5 @@
 from amazon_scraper import AmazonScraper
-import time
+import asyncio
 from fastapi import FastAPI, HTTPException
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
@@ -39,26 +39,43 @@ class ScrapeResponse(BaseModel):
 
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape_product(request: ScrapeRequest):
-    scraper = AmazonScraper()
     results = []
     failed_count = 0
     
     # Use provided zipcodes or default ones
     zipcodes_to_check = request.zipcodes if request.zipcodes else DEFAULT_ZIPCODES
     
-    for zipcode in zipcodes_to_check:
-        try:
-            result = scraper.get_product_info(request.asin, zipcode)
-            
-            if result:
-                results.append(result)
-            
-            # Add a delay between requests to avoid rate limiting
-            time.sleep(1)
-            
-        except Exception as e:
-            failed_count += 1
-            continue
+    # Create a semaphore to limit concurrent requests
+    semaphore = asyncio.Semaphore(4)
+    
+    async def process_zipcode(zipcode: str):
+        nonlocal failed_count
+        async with semaphore:
+            try:
+                # Create a new scraper instance for each request
+                scraper = AmazonScraper()
+                # Run the synchronous get_product_info in a thread pool
+                result = await asyncio.to_thread(scraper.get_product_info, request.asin, zipcode)
+                if result:
+                    results.append(result)
+                    return True
+                else:
+                    # Increment failed_count when result is None
+                    print(f"Failed to process zipcode {zipcode}: No data returned")
+                    failed_count += 1
+                    return False
+            except Exception as e:
+                print(f"Error processing zipcode {zipcode}: {str(e)}")
+                failed_count += 1
+                return False
+            finally:
+                await asyncio.sleep(1)  # Add delay between requests
+    
+    # Create tasks for all zipcodes
+    tasks = [process_zipcode(zipcode) for zipcode in zipcodes_to_check]
+    
+    # Wait for all tasks to complete
+    await asyncio.gather(*tasks)
     
     if not results:
         raise HTTPException(status_code=404, detail="No data could be retrieved for the given ASIN")

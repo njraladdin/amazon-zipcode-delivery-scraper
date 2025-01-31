@@ -91,10 +91,10 @@ def extract_offer_data(offer_div, is_pinned):
         'prime': False,  # Renamed from prime_eligible
         'earliest_days': None,
         'latest_days': None,
-        # 'debug': {
-        #     'full_offer_text': offer_div.get_text(separator=' ', strip=True),
-        #     'offer_html': str(offer_div)
-        # }
+        'debug': {
+            'full_offer_text': offer_div.get_text(separator=' ', strip=True),
+            # 'offer_html': str(offer_div)
+        }
     }
 
     # Price components
