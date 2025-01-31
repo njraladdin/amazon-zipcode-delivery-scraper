@@ -91,11 +91,18 @@ async def scrape_product(request: ScrapeRequest):
 if __name__ == "__main__":
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    print(f"\nServer running at: http://{local_ip}:8080")
+    
+    # Add more logging
+    print(f"Starting server...")
+    print(f"Hostname: {hostname}")
+    print(f"Local IP: {local_ip}")
+    print(f"Server will run at: http://{local_ip}:8080")
+    
     uvicorn.run(
         app, 
         host="0.0.0.0", 
-        port=8080,        # Changed to 8080 which doesn't require sudo
-        log_level="info",
-        access_log=True
+        port=8080,
+        log_level="debug",  # Changed to debug for more verbose logging
+        access_log=True,
+        workers=1
     )

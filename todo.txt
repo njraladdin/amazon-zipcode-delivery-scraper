@@ -25,7 +25,13 @@ create api endpoint that receives asin and list of zipcode and returns the final
 add check to see if zipcode was actually changed succefully on page, done 
 add proxy usage, done 
 work concurrently on multiple zipcodes, done 
+deploy on VM, done 
 
 
-deploy on VM 
+implement bigquery 
+load zipcodes from file, and test with full zipcodes list 
+
+
+
+
 
