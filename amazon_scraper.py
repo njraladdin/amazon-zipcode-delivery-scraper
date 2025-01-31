@@ -1,3 +1,14 @@
+"""
+Amazon Scraper Request Flow:
+1. Initial homepage request to get cookies
+2. Product page request to get first CSRF token + additional cookies
+3. Modal HTML request to get second CSRF token
+4. Change zipcode request using second CSRF token
+5. Product page request with updated location
+6. All offers page request
+7. Repeat all offers page request with Prime-only filter (if Prime filter available)
+"""
+
 import tls_client
 from bs4 import BeautifulSoup
 import json
@@ -289,6 +300,11 @@ class AmazonScraper:
 
         self._make_change_zipcode_request(csrf_token2, zipcode)
         
+        # Get and save product page HTML after zipcode change
+        product_page_html = self._get_product_page(asin, csrf_token2)
+        if save_to_file:
+            self._save_to_file(product_page_html, f'product_page_{asin}_{zipcode}.html', is_html=True)
+
         # Initialize final data object
         final_data = {
             "asin": asin,
@@ -308,9 +324,6 @@ class AmazonScraper:
         # Get all offers
         all_offers_html = self._get_offers_page(asin, csrf_token2)
         try:
-            # Save all offers HTML for debugging
-            if save_to_file:
-                self._save_to_file(all_offers_html, f'offers_html_{asin}_{zipcode}.html', is_html=True)
             
             # Parse offers and get prime filter status
             offers_json, has_prime_filter = parse_offers(all_offers_html)
@@ -381,8 +394,8 @@ class AmazonScraper:
 if __name__ == "__main__":
     try:
         scraper = AmazonScraper()
-        asin = "B08DK5ZH44"
-        zipcode = "94102"
+        asin = "B09X7CRKRZ"
+        zipcode = "98101"
         
         result = scraper.get_product_info(asin, zipcode)
         if result:

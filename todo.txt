@@ -22,6 +22,7 @@ make two requets to offers page, one with all products adn other with prime elig
 consolidate all data, done 
 fix parsing to be as in requirements, done 
 
+create api endpoint that receives asin and list of zipcode and returns the final data json 
 
 test few zipcodes on VM 
 
