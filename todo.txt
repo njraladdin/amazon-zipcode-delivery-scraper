@@ -16,16 +16,12 @@ todo:
 
 also get the offers page, done 
 parse product and offers pages, done 
-
-
 test with different zip codes and compare results of each ZIP code, done 
-
-
 turn into clear class, done 
+make two requets to offers page, one with all products adn other with prime eligible filter, done 
+consolidate all data, done 
+fix parsing to be as in requirements, done 
 
-make two requets to offers page, one with all products adn other with prime eligible filter 
 
-fix parsing 
-
-test few zipcodeson VM 
+test few zipcodes on VM 
 

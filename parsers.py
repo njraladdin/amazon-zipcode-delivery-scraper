@@ -1,12 +1,26 @@
 from bs4 import BeautifulSoup
 import json
+from datetime import datetime, timedelta
+import re
 
 def parse_offers(html_text):
     """
     Parses HTML containing Amazon offers and returns a JSON object of the offers data.
+    
+    Returns:
+        tuple: (offers_json, has_prime_filter) where:
+            - offers_json is the JSON string of parsed offers
+            - has_prime_filter is a boolean indicating if Prime filter is available
     """
     soup = BeautifulSoup(html_text, 'html.parser')
     offers = []
+
+    # Check if Prime filter exists
+    filter_list = soup.find('div', id='aod-filter-list')
+    has_prime_filter = False
+    if filter_list:
+        prime_checkbox = filter_list.find('i', {'class': 'a-icon-prime', 'role': 'img'})
+        has_prime_filter = prime_checkbox is not None
 
     # Find the pinned offer first (if present)
     pinned_offer_div = soup.find('div', id='aod-pinned-offer')
@@ -18,7 +32,54 @@ def parse_offers(html_text):
     for offer_div in offer_divs:
         offers.append(extract_offer_data(offer_div, False))
 
-    return json.dumps(offers, indent=2)
+    return json.dumps(offers, indent=2), has_prime_filter
+
+def parse_delivery_days(delivery_estimate):
+    """Convert delivery estimate text to earliest and latest days"""
+    if not delivery_estimate:
+        return None, None
+        
+    # Handle "February 10 - 13" style dates
+    today = datetime.now()
+    months = {
+        'January': 1, 'February': 2, 'March': 3, 'April': 4,
+        'May': 5, 'June': 6, 'July': 7, 'August': 8,
+        'September': 9, 'October': 10, 'November': 11, 'December': 12
+    }
+    
+    for month in months:
+        if month in delivery_estimate:
+            # Extract date range like "February 10 - 13"
+            dates = re.findall(r'\d+', delivery_estimate)
+            if len(dates) >= 2:  # We have a range
+                earliest_day = int(dates[0])
+                latest_day = int(dates[1])
+                month_num = months[month]
+                year = today.year
+                
+                # If the month is earlier than current month, it must be next year
+                if month_num < today.month:
+                    year += 1
+                
+                earliest_date = datetime(year, month_num, earliest_day)
+                latest_date = datetime(year, month_num, latest_day)
+                
+                earliest_days = (earliest_date - today).days
+                latest_days = (latest_date - today).days
+                
+                return earliest_days, latest_days
+            elif len(dates) == 1:  # Single date
+                day = int(dates[0])
+                month_num = months[month]
+                year = today.year
+                if month_num < today.month:
+                    year += 1
+                
+                delivery_date = datetime(year, month_num, day)
+                days_until = (delivery_date - today).days
+                return days_until, days_until
+    
+    return None, None
 
 def extract_offer_data(offer_div, is_pinned):
     """
@@ -27,27 +88,47 @@ def extract_offer_data(offer_div, is_pinned):
     offer_data = {
         'seller_id': None,
         'buy_box_winner': is_pinned,
-        'prime_eligible': 'TODO',  # Need to detect Prime badge
+        'prime': False,  # Renamed from prime_eligible
+        'earliest_days': None,
+        'latest_days': None
     }
 
     # Price components
     price_span = offer_div.find('span', class_='a-price')
     if price_span:
-        price = price_span.find('span', class_='a-price-whole').text.strip() + price_span.find('span', class_='a-price-fraction').text.strip()
-        offer_data['item_price'] = price
-        offer_data['total_price'] = price  # Will need to add shipping if not free
+        whole = price_span.find('span', class_='a-price-whole')
+        fraction = price_span.find('span', class_='a-price-fraction')
+        if whole and fraction:
+            price_str = whole.text.strip() + fraction.text.strip()
+            # Remove any non-numeric characters except decimal point
+            price_str = re.sub(r'[^\d.]', '', price_str)
+            offer_data['price'] = float(price_str)  # Renamed from item_price
+            offer_data['total_price'] = offer_data['price']  # Will add shipping cost later
 
     # Delivery information
-    delivery_info = {}
     delivery_promise = offer_div.find('div', class_='aod-delivery-promise')
     if delivery_promise:
         primary_delivery = delivery_promise.find('span', {'data-csa-c-content-id': 'DEXUnifiedCXPDM'})
         if primary_delivery:
             shipping_cost = primary_delivery.get('data-csa-c-delivery-price')
-            offer_data['shipping_cost'] = 'FREE' if shipping_cost == 'FREE' else shipping_cost
-            delivery_time = primary_delivery.find('span', class_="a-text-bold").text.strip()
-            offer_data['delivery_estimate'] = delivery_time
-            # TODO: Add earliest_days and latest_days calculation from delivery_time
+            # Convert shipping cost to float, FREE becomes 0.0
+            if shipping_cost == 'FREE':
+                offer_data['shipping_cost'] = 0.0
+            else:
+                # Remove currency symbol and convert to float
+                shipping_cost = re.sub(r'[^\d.]', '', shipping_cost)
+                offer_data['shipping_cost'] = float(shipping_cost) if shipping_cost else 0.0
+            
+            # Calculate total price including shipping
+            offer_data['total_price'] = offer_data['price'] + offer_data['shipping_cost']
+
+            delivery_time = primary_delivery.find('span', class_="a-text-bold")
+            if delivery_time:
+                delivery_text = delivery_time.text.strip()
+                offer_data['delivery_estimate'] = delivery_text
+                earliest, latest = parse_delivery_days(delivery_text)
+                offer_data['earliest_days'] = earliest
+                offer_data['latest_days'] = latest
 
     # Seller information
     sold_by_div = offer_div.find('div', id='aod-offer-soldBy')
@@ -59,50 +140,6 @@ def extract_offer_data(offer_div, is_pinned):
             offer_data['seller_id'] = extract_seller_id(seller_url)
 
     return offer_data
-
-def parse_product_page(html_text):
-    """
-    Parses HTML of an Amazon product page and returns product data.
-    """
-    soup = BeautifulSoup(html_text, 'html.parser')
-    product_data = {
-        'asin': 'TODO',  # Should be passed as parameter
-        'buy_box_winner': {
-            'seller_name': None,
-            'seller_id': None,
-            'price': None,
-            'shipping_cost': None,
-            'prime_eligible': 'TODO',
-            'delivery_estimate': None,
-            'buy_box_winner': True
-        }
-    }
-
-    # Extract seller information
-    seller_info = soup.find('div', {'id': 'merchant-info'})
-    if seller_info:
-        seller_link = seller_info.find('a')
-        if seller_link:
-            product_data['buy_box_winner']['seller_name'] = seller_link.text.strip()
-            seller_url = seller_link.get('href')
-            product_data['buy_box_winner']['seller_id'] = extract_seller_id(seller_url)
-
-    # Extract price for buy box
-    price_element = soup.find('span', class_='a-price')
-    if price_element:
-        price = price_element.find('span', class_='a-offscreen')
-        if price:
-            product_data['buy_box_winner']['price'] = price.text.strip()
-
-    # Extract delivery information
-    delivery_element = soup.find('div', id='mir-layout-DELIVERY_BLOCK')
-    if delivery_element:
-        primary_delivery = delivery_element.find('span', {'data-csa-c-content-id': 'DEXUnifiedCXPDM'})
-        if primary_delivery:
-            product_data['buy_box_winner']['shipping_cost'] = primary_delivery.get('data-csa-c-delivery-price')
-            product_data['buy_box_winner']['delivery_estimate'] = primary_delivery.get('data-csa-c-delivery-time')
-
-    return json.dumps(product_data, indent=2)
 
 def extract_seller_id(seller_url):
     """Extract seller ID from seller URL"""

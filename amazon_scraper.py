@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import json
 import http.cookies
 import os
-from parsers import parse_offers, parse_product_page
+from parsers import parse_offers
 from colorama import init, Fore, Style
 import time
 
@@ -68,6 +68,11 @@ class AmazonScraper:
         if response.status_code != 200:
             self._log_error(f"Product page request failed with status code: {response.status_code}")
             return None
+
+        # Debug print for cookies after both requests
+        self._log_info("Current session cookies after initial requests:")
+        for cookie_name, cookie_value in self.session.cookies.get_dict().items():
+            print(f"{Fore.CYAN}[DEBUG] Cookie: {cookie_name} = {cookie_value[:20]}...{Style.RESET_ALL}")
 
         # Parse the HTML and get CSRF token from modal data
         self._log_info("Extracting CSRF token...")
@@ -154,10 +159,23 @@ class AmazonScraper:
 
         response = self.session.post(url, headers=headers, data=payload)
         
+        # Debug print response
+        self._log_info(f"Zipcode change response content: {response.text[:200]}...")
+        
         if response.status_code == 200:
-            self._log_success(f"Successfully changed zipcode to {zipcode}")
+            try:
+                response_data = json.loads(response.text)
+                if response_data.get('successful') == 1:
+                    self._log_success(f"Successfully changed zipcode to {zipcode}")
+                else:
+                    self._log_error(f"Failed to change zipcode. Response indicates failure")
+                    return None
+            except json.JSONDecodeError:
+                self._log_error(f"Failed to parse zipcode change response")
+                return None
         else:
             self._log_error(f"Failed to change zipcode. Status code: {response.status_code}")
+            return None
         
         return response
 
@@ -187,9 +205,13 @@ class AmazonScraper:
         
         return response.text
 
-    def _get_offers_page(self, asin, csrf_token):
-        self._log_info(f"Fetching offers page for ASIN: {asin}")
-        offers_url = f"https://www.amazon.com/gp/product/ajax/ref=dp_aod_ALL_mbc?asin={asin}&m=&qid=&smid=&sourcecustomerorglistid=&sourcecustomerorglistitemid=&sr=&pc=dp&experienceId=aodAjaxMain"
+    def _get_offers_page(self, asin, csrf_token, prime_only=False):
+        self._log_info(f"Fetching offers page for ASIN: {asin}{' (Prime only)' if prime_only else ''}")
+        base_url = f"https://www.amazon.com/gp/product/ajax/ref=dp_aod_ALL_mbc?asin={asin}&m=&qid=&smid=&sourcecustomerorglistid=&sourcecustomerorglistitemid=&sr=&pc=dp&experienceId=aodAjaxMain"
+        
+        # Add Prime filter if requested
+        if prime_only:
+            base_url += "&filters=%257B%2522primeEligible%2522%253Atrue%257D"
         
         headers = {
             'accept': 'text/html,*/*',
@@ -207,14 +229,37 @@ class AmazonScraper:
             'anti-csrftoken-a2z': csrf_token
         }
         
-        response = self.session.get(offers_url, headers=headers)
+        response = self.session.get(base_url, headers=headers)
         
         if response.status_code == 200:
-            self._log_success("Offers page fetched successfully")
+            self._log_success(f"Offers page fetched successfully{' (Prime only)' if prime_only else ''}")
         else:
-            self._log_error(f"Failed to fetch offers page. Status code: {response.status_code}")
+            self._log_error(f"Failed to fetch offers page{' (Prime only)' if prime_only else ''}. Status code: {response.status_code}")
         
         return response.text
+
+    def _save_to_file(self, data, filename, is_html=False):
+        """Helper method to save data to a file
+        
+        Args:
+            data: The data to save (string for HTML, dict/list for JSON)
+            filename: The filename to save to
+            is_html (bool): Whether the data is HTML (True) or JSON (False)
+        """
+        try:
+            filepath = os.path.join(self.output_dir, filename)
+            mode = 'w' if is_html else 'w'
+            encoding = 'utf-8' if is_html else None
+            
+            with open(filepath, mode, encoding=encoding) as f:
+                if is_html:
+                    f.write(data)
+                else:
+                    json.dump(data, f, indent=2)
+                    
+            self._log_success(f"Data saved to: {filepath}")
+        except Exception as e:
+            self._log_error(f"Failed to save data to {filename}: {str(e)}")
 
     def get_product_info(self, asin, zipcode, save_to_file=True):
         """
@@ -226,7 +271,7 @@ class AmazonScraper:
             save_to_file (bool): Whether to save results to files
             
         Returns:
-            tuple: (product_data, offers_data) as dictionaries
+            dict: Final data including offers and metadata
         """
         start_time = time.time()
         self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
@@ -235,54 +280,102 @@ class AmazonScraper:
         csrf_token1 = self._make_initial_product_page_request(asin)
         if not csrf_token1:
             self._log_error("Failed to get initial CSRF token")
-            return None, None
+            return None
 
         csrf_token2 = self._make_modal_html_request(csrf_token1)
         if not csrf_token2:
             self._log_error("Failed to get modal CSRF token")
-            return None, None
+            return None
 
         self._make_change_zipcode_request(csrf_token2, zipcode)
         
-        # Get and parse product page
-        self._log_info("Parsing product page...")
-        product_html = self._get_product_page(asin, csrf_token2)
-        try:
-            product_data = json.loads(parse_product_page(product_html))
-            self._log_success("Product page parsed successfully")
-        except Exception as e:
-            self._log_error(f"Failed to parse product page: {str(e)}")
-            return None, None
+        # Initialize final data object
+        final_data = {
+            "asin": asin,
+            "zip_code": zipcode,
+            "timestamp": int(time.time()),
+            "offers_data": None,
+            "metadata": {
+                "total_offers": 0,
+                "prime_eligible_offers": 0,
+                "collection_time_seconds": 0
+            }
+        }
         
-        # Get and parse offers page
-        self._log_info("Parsing offers page...")
-        offers_html = self._get_offers_page(asin, csrf_token2)
-        try:
-            offers_data = json.loads(parse_offers(offers_html))
-            self._log_success("Offers page parsed successfully")
-        except Exception as e:
-            self._log_error(f"Failed to parse offers page: {str(e)}")
-            return product_data, None
+        # Get and parse offers pages
+        self._log_info("Parsing offers pages...")
         
+        # Get all offers
+        all_offers_html = self._get_offers_page(asin, csrf_token2)
+        try:
+            # Save all offers HTML for debugging
+            if save_to_file:
+                self._save_to_file(all_offers_html, f'offers_html_{asin}_{zipcode}.html', is_html=True)
+            
+            # Parse offers and get prime filter status
+            offers_json, has_prime_filter = parse_offers(all_offers_html)
+            all_offers_data = json.loads(offers_json)
+            self._log_success(f"All offers page parsed successfully - Found {len(all_offers_data)} offers")
+            
+            # Debug print for Prime filter status
+            self._log_info(f"Prime filter available: {has_prime_filter}")
+            
+            prime_offers_data = []
+            # Only make Prime-only request if Prime filter exists
+            if has_prime_filter:
+                # Get Prime-only offers
+                prime_offers_html = self._get_offers_page(asin, csrf_token2, prime_only=True)
+                try:
+                    # Save Prime offers HTML for debugging
+                    if save_to_file:
+                        self._save_to_file(prime_offers_html, f'offers_html_prime_{asin}_{zipcode}.html', is_html=True)
+                    
+                    # Parse prime offers
+                    prime_offers_json, _ = parse_offers(prime_offers_html)
+                    prime_offers_data = json.loads(prime_offers_json)
+                    self._log_success(f"Prime offers page parsed successfully - Found {len(prime_offers_data)} Prime eligible offers")
+                except Exception as e:
+                    self._log_error(f"Failed to parse Prime offers page: {str(e)}")
+            else:
+                self._log_info("No Prime filter available - skipping Prime-only request")
+
+        except Exception as e:
+            self._log_error(f"Failed to parse all offers page: {str(e)}")
+            return None
+
+        # Merge and mark Prime eligible offers
+        offers_data = []
+        prime_seller_ids = {offer['seller_id'] for offer in prime_offers_data}
+        
+        for offer in all_offers_data:
+            offer['prime'] = offer['seller_id'] in prime_seller_ids
+            offers_data.append(offer)
+        
+        # Update final data
+        final_data["offers_data"] = offers_data
+        final_data["metadata"].update({
+            "total_offers": len(offers_data),
+            "prime_eligible_offers": len(prime_seller_ids),
+            "collection_time_seconds": round(time.time() - start_time, 2)
+        })
+
         if save_to_file:
             try:
-                # Save product data
-                product_file = os.path.join(self.output_dir, f'product_{asin}_{zipcode}.json')
-                with open(product_file, 'w') as f:
-                    json.dump(product_data, f, indent=2)
-                self._log_success(f"Product data saved to: {product_file}")
+                # Create timestamp for filename
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
                 
-                # Save offers data
-                offers_file = os.path.join(self.output_dir, f'offers_{asin}_{zipcode}.json')
-                with open(offers_file, 'w') as f:
-                    json.dump(offers_data, f, indent=2)
-                self._log_success(f"Offers data saved to: {offers_file}")
+                # Save final data
+                self._save_to_file(
+                    final_data, 
+                    f'final_{asin}_{zipcode}_{timestamp}.json'
+                )
+ 
             except Exception as e:
                 self._log_error(f"Failed to save data to files: {str(e)}")
         
         elapsed_time = time.time() - start_time
         self._log_success(f"Data collection completed in {elapsed_time:.2f} seconds")
-        return product_data, offers_data
+        return final_data
 
 # Example usage:
 if __name__ == "__main__":
@@ -291,9 +384,11 @@ if __name__ == "__main__":
         asin = "B08DK5ZH44"
         zipcode = "94102"
         
-        product_data, offers_data = scraper.get_product_info(asin, zipcode)
-        if product_data or offers_data:
+        result = scraper.get_product_info(asin, zipcode)
+        if result:
             print(f"\n{Fore.GREEN}[SUCCESS] Data collection completed successfully!{Style.RESET_ALL}")
+            print(f"Total offers: {result['metadata']['total_offers']}")
+            print(f"Prime eligible offers: {result['metadata']['prime_eligible_offers']}")
         else:
             print(f"\n{Fore.RED}[ERROR] Failed to collect data{Style.RESET_ALL}")
     except Exception as e:
