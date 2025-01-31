@@ -1,0 +1,8 @@
+tls-client
+beautifulsoup4
+colorama
+aiohttp
+fastapi
+uvicorn
+pydantic
+typing-extensions 

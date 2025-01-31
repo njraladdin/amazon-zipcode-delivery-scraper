@@ -24,8 +24,8 @@ fix parsing to be as in requirements, done
 create api endpoint that receives asin and list of zipcode and returns the final data json, done 
 add check to see if zipcode was actually changed succefully on page, done 
 add proxy usage, done 
+work concurrently on multiple zipcodes, done 
 
-work concurrently on multiple zipcodes
 
 deploy on VM 
 
