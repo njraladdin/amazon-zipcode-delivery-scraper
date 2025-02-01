@@ -44,6 +44,21 @@ class ScrapeResponse(BaseModel):
 # After imports
 logger = setup_logger('FastAPI')
 
+def load_config():
+    config_path = Path(__file__).parent / "config.json"
+    try:
+        with open(config_path, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading config.json: {e}")
+        return {
+            "max_concurrent_zipcode_scrapers": 10,  # fallback default
+            "port": 8080
+        }
+
+# Load configuration
+CONFIG = load_config()
+
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape_product(request: ScrapeRequest):
     results = []
@@ -52,8 +67,8 @@ async def scrape_product(request: ScrapeRequest):
     # Use provided zipcodes or default ones
     zipcodes_to_check = request.zipcodes if request.zipcodes else DEFAULT_ZIPCODES
     
-    # Create a semaphore to limit concurrent zipcode processing
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_ZIPCODE_SCRAPERS)
+    # Use CONFIG instead of hardcoded value
+    semaphore = asyncio.Semaphore(CONFIG["max_concurrent_zipcode_scrapers"])
     
     async def process_zipcode(zipcode: str):
         nonlocal failed_count
@@ -101,13 +116,12 @@ if __name__ == "__main__":
     logger.info("Starting server...")
     logger.info(f"Hostname: {hostname}")
     logger.info(f"Local IP: {local_ip}")
-    logger.info(f"Server will run at: http://{local_ip}:8080")
+    logger.info(f"Server will run at: http://{local_ip}:{CONFIG['port']}")
     
     uvicorn.run(
         app, 
-        host="0.0.0.0", 
-        port=8080,
-        log_level="debug",  # Changed to debug for more verbose logging
-        access_log=True,
-        workers=1
+        host="0.0.0.0",
+        port=CONFIG["port"],
+        log_level="debug",
+        access_log=True
     )

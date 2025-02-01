@@ -1,0 +1,4 @@
+{
+    "max_concurrent_zipcode_scrapers": 10,
+    "port": 8080
+} 
