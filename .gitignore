@@ -5,4 +5,8 @@ __pycache__/
 
 
 *.html 
-*.json
+output/
+
+# Ignore log files
+logs/
+*.log

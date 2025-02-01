@@ -28,8 +28,10 @@ work concurrently on multiple zipcodes, done
 deploy on VM, done 
 
 
-implement bigquery 
 load zipcodes from file, and test with full zipcodes list 
+
+
+implement bigquery 
 
 
 

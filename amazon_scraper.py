@@ -20,6 +20,9 @@ import time
 import random
 import aiohttp
 from typing import Dict, Any
+import threading
+from datetime import datetime
+from logger import setup_logger
 
 # Configuration constants
 SAVE_OUTPUT = False  # Set to True to save files to output folder
@@ -29,6 +32,7 @@ init(autoreset=True)
 
 class AmazonScraper:
     def __init__(self):
+        self.logger = setup_logger('AmazonScraper')
         # Read and parse proxies from proxies.txt
         with open('proxies.txt', 'r') as f:
             proxies = [line.strip() for line in f.readlines() if line.strip()]
@@ -51,19 +55,19 @@ class AmazonScraper:
         self.output_dir = 'output'
         if SAVE_OUTPUT:
             os.makedirs(self.output_dir, exist_ok=True)
-        print(f"{Fore.GREEN}[+] AmazonScraper initialized with proxy: {ip}:{port}{Style.RESET_ALL}")
+        self.logger.success(f"AmazonScraper initialized with proxy: {ip}:{port}")
 
     def _log_info(self, message):
-        print(f"{Fore.CYAN}[INFO] {message}{Style.RESET_ALL}")
+        self.logger.info(message)
 
     def _log_success(self, message):
-        print(f"{Fore.GREEN}[SUCCESS] {message}{Style.RESET_ALL}")
+        self.logger.success(message)
 
     def _log_warning(self, message):
-        print(f"{Fore.YELLOW}[WARNING] {message}{Style.RESET_ALL}")
+        self.logger.warning(message)
 
     def _log_error(self, message):
-        print(f"{Fore.RED}[ERROR] {message}{Style.RESET_ALL}")
+        self.logger.error(message)
 
     def _make_initial_product_page_request(self, asin):
         self._log_info(f"Making initial request for ASIN: {asin}")
