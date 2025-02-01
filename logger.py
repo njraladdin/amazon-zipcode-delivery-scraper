@@ -1,5 +1,6 @@
 import logging
-from logging import StreamHandler, FileHandler
+from logging import StreamHandler
+from logging.handlers import RotatingFileHandler
 import sys
 from colorama import init, Fore, Style
 from datetime import datetime
@@ -12,6 +13,9 @@ init(autoreset=True)
 # Create logs directory if it doesn't exist
 LOGS_DIR = Path(__file__).parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
+
+# Constant for max log size
+MAX_BYTES = 5 * 1024 * 1024  # 50MB per file
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter that adds colors to log levels"""
@@ -59,7 +63,12 @@ def setup_logger(name='AmazonScraper'):
         # File handler without colors
         today = datetime.now().strftime('%Y-%m-%d')
         log_file = LOGS_DIR / f"{name}_{today}.log"
-        file_handler = FileHandler(log_file, encoding='utf-8')
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=MAX_BYTES,
+            backupCount=0,  # No backup files, just truncate when limit reached
+            encoding='utf-8'
+        )
         file_formatter = logging.Formatter(
             fmt='%(asctime)s.%(msecs)03d [%(thread)d] %(levelname)s: %(message)s',
             datefmt='%Y-%m-%d %H:%M:%S'
