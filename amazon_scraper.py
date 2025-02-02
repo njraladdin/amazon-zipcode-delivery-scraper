@@ -9,7 +9,7 @@ Amazon Scraper Request Flow:
 7. Repeat all offers page request with Prime-only filter (if Prime filter available)
 """
 
-import requests
+import tls_client
 from bs4 import BeautifulSoup
 import json
 import http.cookies
@@ -44,13 +44,12 @@ class AmazonScraper:
         # Format the proxy string
         proxy = f"http://{username}:{password}@{ip}:{port}"
         
-        # Replace tls_client session with requests session
-        self.session = requests.Session()
-        # Set proxy for requests session
-        self.session.proxies = {
-            'http': proxy,
-            'https': proxy
-        }
+        self.session = tls_client.Session(
+            client_identifier="chrome126",
+            random_tls_extension_order=True
+        )
+        # Set proxy directly on the session
+        self.session.proxies = proxy
         
         # Only create output directory if saving is enabled
         self.output_dir = 'output'
