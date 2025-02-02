@@ -410,6 +410,7 @@ class AmazonScraper:
     async def _process_zipcode_with_session(self, asin: str, zipcode: str, csrf_token: str) -> Dict[str, Any]:
         """Process a single zipcode with the existing session"""
         try:
+            timings = {}  # Dictionary to store timing information
             start_time = time.time()
             self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
             
@@ -422,37 +423,43 @@ class AmazonScraper:
                 "metadata": {
                     "total_offers": 0,
                     "prime_eligible_offers": 0,
-                    "collection_time_seconds": 0
+                    "collection_time_seconds": 0,
+                    "step_timings": {}  # Add this to store step timings
                 }
             }
             
             # Get and parse offers pages
             self._log_info("Parsing offers pages...")
             
-            # Get all offers
+            # Time the all offers request
+            all_offers_start = time.time()
             all_offers_html = self._get_offers_page(asin, csrf_token)
+            timings['all_offers_request'] = round(time.time() - all_offers_start, 2)
+            
             try:
-                
-                # Parse offers and get prime filter status
+                # Time the all offers parsing
+                parse_start = time.time()
                 offers_json, has_prime_filter = parse_offers(all_offers_html)
                 all_offers_data = json.loads(offers_json)
-                self._log_success(f"All offers page parsed successfully - Found {len(all_offers_data)} offers")
+                timings['all_offers_parsing'] = round(time.time() - parse_start, 2)
                 
-                # Debug print for Prime filter status
+                self._log_success(f"All offers page parsed successfully - Found {len(all_offers_data)} offers")
                 self._log_info(f"Prime filter available: {has_prime_filter}")
                 
                 prime_offers_data = []
                 # Only make Prime-only request if Prime filter exists
                 if has_prime_filter:
-                    # Get Prime-only offers
+                    # Time the prime offers request and parsing
+                    prime_start = time.time()
                     prime_offers_html = self._get_offers_page(asin, csrf_token, prime_only=True)
+                    timings['prime_offers_request'] = round(time.time() - prime_start, 2)
+                    
                     try:
-                        # Save Prime offers HTML for debugging
-                        self._save_to_file(prime_offers_html, f'offers_html_prime_{asin}_{zipcode}.html', is_html=True)
-                        
-                        # Parse prime offers
+                        prime_parse_start = time.time()
                         prime_offers_json, _ = parse_offers(prime_offers_html)
                         prime_offers_data = json.loads(prime_offers_json)
+                        timings['prime_offers_parsing'] = round(time.time() - prime_parse_start, 2)
+                        
                         self._log_success(f"Prime offers page parsed successfully - Found {len(prime_offers_data)} Prime eligible offers")
                     except Exception as e:
                         self._log_error(f"Failed to parse Prime offers page: {str(e)}")
@@ -463,34 +470,41 @@ class AmazonScraper:
                 self._log_error(f"Failed to parse all offers page: {str(e)}")
                 return None
 
-            # Merge and mark Prime eligible offers
+            # Time the offer merging process
+            merge_start = time.time()
             offers_data = []
             prime_seller_ids = {offer['seller_id'] for offer in prime_offers_data}
             
             for offer in all_offers_data:
                 offer['prime'] = offer['seller_id'] in prime_seller_ids
                 offers_data.append(offer)
+            timings['offer_merging'] = round(time.time() - merge_start, 2)
             
             # Update final data
             final_data["offers_data"] = offers_data
             final_data["metadata"].update({
                 "total_offers": len(offers_data),
                 "prime_eligible_offers": len(prime_seller_ids),
-                "collection_time_seconds": round(time.time() - start_time, 2)
+                "collection_time_seconds": round(time.time() - start_time, 2),
+                "step_timings": timings
             })
+
+            # Log the timing breakdown
+            self._log_info("\nTiming breakdown:")
+            for step, duration in timings.items():
+                self._log_info(f"  {step}: {duration} seconds")
+            self._log_info(f"  Total time: {final_data['metadata']['collection_time_seconds']} seconds\n")
 
             self._save_to_file(
                 final_data, 
                 f'final_{asin}_{zipcode}_{time.strftime("%Y%m%d_%H%M%S")}.json'
             )
             
-            elapsed_time = time.time() - start_time
-            self._log_success(f"Data collection completed in {elapsed_time:.2f} seconds")
             return final_data
 
         except Exception as e:
             self._log_error(f"Unexpected error for zipcode {zipcode}: {str(e)}")
-            raise  # Re-raise the exception to be caught by the caller
+            raise
 
 # Example usage:
 if __name__ == "__main__":
