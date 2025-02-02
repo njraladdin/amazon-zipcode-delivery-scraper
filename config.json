@@ -1,6 +1,6 @@
 {
-    "max_concurrent_zipcode_scrapers": 50,
+    "max_concurrent_zipcode_scrapers": 75,
     "port": 8080,
     "allow_proxy": false,
-    "batch_size": 3
+    "batch_size": 4
 } 
