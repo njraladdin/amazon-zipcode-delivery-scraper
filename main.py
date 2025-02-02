@@ -71,9 +71,8 @@ async def scrape_product(request: ScrapeRequest):
     semaphore = asyncio.Semaphore(CONFIG["max_concurrent_zipcode_scrapers"])
     
     async def process_zipcode(zipcode: str):
-        nonlocal failed_count
-        async with semaphore:
-            try:
+        try:
+            async with semaphore:  # Move semaphore inside the function so tasks are created immediately
                 logger.info(f"Starting processing for zipcode: {zipcode}")
                 scraper = AmazonScraper()
                 result = await asyncio.to_thread(scraper.get_product_info, request.asin, zipcode)
@@ -85,14 +84,14 @@ async def scrape_product(request: ScrapeRequest):
                     logger.error(f"Failed processing for zipcode: {zipcode}: No data returned")
                     failed_count += 1
                     return False
-            except Exception as e:
-                logger.error(f"Error processing zipcode {zipcode}: {str(e)}")
-                failed_count += 1
-                return False
-            finally:
-                await asyncio.sleep(1)
+        except Exception as e:
+            logger.error(f"Error processing zipcode {zipcode}: {str(e)}")
+            failed_count += 1
+            return False
+        finally:
+            await asyncio.sleep(1)
     
-    # Create tasks for all zipcodes
+    # Create all tasks immediately - they'll wait on the semaphore internally
     tasks = [process_zipcode(zipcode) for zipcode in zipcodes_to_check]
     
     # Wait for all tasks to complete
