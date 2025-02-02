@@ -57,11 +57,10 @@ async def scrape_product(request: ScrapeRequest):
     # Use provided zipcodes or default ones
     zipcodes_to_check = request.zipcodes if request.zipcodes else DEFAULT_ZIPCODES
     
-    # Split zipcodes into batches of 5
-    BATCH_SIZE = 3
+    # Use batch size from config
     zipcode_batches = [
-        zipcodes_to_check[i:i + BATCH_SIZE] 
-        for i in range(0, len(zipcodes_to_check), BATCH_SIZE)
+        zipcodes_to_check[i:i + CONFIG["batch_size"]] 
+        for i in range(0, len(zipcodes_to_check), CONFIG["batch_size"])
     ]
     
     # Use CONFIG for concurrent scrapers (one per batch)
