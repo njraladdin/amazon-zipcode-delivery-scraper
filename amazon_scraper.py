@@ -373,38 +373,85 @@ class AmazonScraper:
     async def process_multiple_zipcodes(self, asin: str, zipcodes: List[str]) -> List[Dict[str, Any]]:
         """Process multiple zipcodes using the same session"""
         results = []
+        process_start = time.time()
+        timings = {
+            'session_initialization': 0,
+            'zipcodes_processing': []  # Will store timing for each zipcode
+        }
         
         # Do initial session setup once
-        await self._initialize_session(asin)
+        init_start = time.time()
+        try:
+            await self._initialize_session(asin)
+            timings['session_initialization'] = round(time.time() - init_start, 2)
+            self._log_info(f"\nSession initialization took: {timings['session_initialization']} seconds")
+        except Exception as e:
+            self._log_error(f"Session initialization failed: {str(e)}")
+            return results
         
         # Process each zipcode sequentially with the initialized session
         for zipcode in zipcodes:
+            zipcode_timing = {
+                'zipcode': zipcode,
+                'total_time': 0,
+                'steps': {}
+            }
+            
             try:
                 self._log_info(f"Processing zipcode {zipcode} with existing session")
+                zipcode_start = time.time()
                 
-                # Steps 3-7: Per-zipcode processing
+                # Time modal request
+                modal_start = time.time()
                 csrf_token2 = self._make_modal_html_request(self.initial_csrf_token)
+                zipcode_timing['steps']['modal_request'] = round(time.time() - modal_start, 2)
+                
                 if not csrf_token2:
                     self._log_error(f"Failed to get modal CSRF token for zipcode {zipcode}")
                     continue
 
+                # Time zipcode change
+                change_start = time.time()
                 change_response = self._make_change_zipcode_request(csrf_token2, zipcode)
+                zipcode_timing['steps']['zipcode_change'] = round(time.time() - change_start, 2)
+                
                 if not change_response:
                     self._log_error(f"Failed to change zipcode to {zipcode}")
                     continue
 
-                # Rest of the zipcode processing...
+                # Process offers and get result
                 result = await self._process_zipcode_with_session(asin, zipcode, csrf_token2)
                 if result:
+                    # Add the internal step timings to our zipcode timing
+                    zipcode_timing['steps'].update(result['metadata']['step_timings'])
+                    zipcode_timing['total_time'] = round(time.time() - zipcode_start, 2)
+                    timings['zipcodes_processing'].append(zipcode_timing)
                     results.append(result)
                     
-                # Add small delay between zipcodes to avoid rate limiting
-                #await asyncio.sleep(random.uniform(0.5, 1.5))
+                    # Log timing breakdown for this zipcode
+                    self._log_info(f"\nTiming breakdown for zipcode {zipcode}:")
+                    for step, duration in zipcode_timing['steps'].items():
+                        self._log_info(f"  {step}: {duration} seconds")
+                    self._log_info(f"  Total zipcode processing time: {zipcode_timing['total_time']} seconds")
                 
             except Exception as e:
                 self._log_error(f"Error processing zipcode {zipcode}: {str(e)}")
                 continue
-                
+        
+        # Calculate and log total processing time
+        total_time = round(time.time() - process_start, 2)
+        timings['total_processing_time'] = total_time
+        
+        # Log overall timing summary
+        self._log_info("\n=== Overall Timing Summary ===")
+        self._log_info(f"Session initialization: {timings['session_initialization']} seconds")
+        self._log_info("\nPer-zipcode processing times:")
+        for zt in timings['zipcodes_processing']:
+            self._log_info(f"\nZipcode {zt['zipcode']} ({zt['total_time']} seconds):")
+            for step, duration in zt['steps'].items():
+                self._log_info(f"  {step}: {duration} seconds")
+        self._log_info(f"\nTotal processing time: {total_time} seconds")
+        
         return results
 
     async def _process_zipcode_with_session(self, asin: str, zipcode: str, csrf_token: str) -> Dict[str, Any]:
