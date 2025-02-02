@@ -349,15 +349,15 @@ class AmazonScraper:
                 self._log_error(f"Failed to change zipcode to {zipcode}")
                 return None
             
-            # Get and save product page HTML after zipcode change
-            product_page_html = self._get_product_page(asin, csrf_token2)
+            # # Get and save product page HTML after zipcode change
+            # product_page_html = self._get_product_page(asin, csrf_token2)
             
-            # Verify zipcode change
-            if not self._verify_zipcode_change(product_page_html, zipcode):
-                self._log_error("Zipcode change verification failed - aborting")
-                return None
+            # # Verify zipcode change
+            # if not self._verify_zipcode_change(product_page_html, zipcode):
+            #     self._log_error("Zipcode change verification failed - aborting")
+            #     return None
 
-            self._save_to_file(product_page_html, f'product_page_{asin}_{zipcode}.html', is_html=True)
+            # self._save_to_file(product_page_html, f'product_page_{asin}_{zipcode}.html', is_html=True)
 
             # Initialize final data object
             final_data = {

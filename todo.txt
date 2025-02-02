@@ -26,12 +26,18 @@ add check to see if zipcode was actually changed succefully on page, done
 add proxy usage, done 
 work concurrently on multiple zipcodes, done 
 deploy on VM, done 
+load zipcodes from file, and test with full zipcodes list, done 
 
 
-load zipcodes from file, and test with full zipcodes list 
 
 
-implement bigquery 
+reach 25 seconds: 
+- remove going to product page, immidiately get offers page
+- instead of doing the full process for each zipcode. allow each AmazonScraper instance to browse thourgh multiple zipcodes 
+
+make a check to see if all delivery times are the same, if yes, something could be wrong 
+
+implement bigquery, enable in config 
 
 
 
