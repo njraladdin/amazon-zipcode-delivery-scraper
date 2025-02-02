@@ -70,12 +70,23 @@ async def scrape_product(request: ScrapeRequest):
     # Use CONFIG instead of hardcoded value
     semaphore = asyncio.Semaphore(CONFIG["max_concurrent_zipcode_scrapers"])
     
+    # Create a ThreadPoolExecutor with max_workers matching our semaphore limit
+    from concurrent.futures import ThreadPoolExecutor
+    thread_pool = ThreadPoolExecutor(max_workers=CONFIG["max_concurrent_zipcode_scrapers"])
+    
     async def process_zipcode(zipcode: str):
         try:
-            async with semaphore:  # Move semaphore inside the function so tasks are created immediately
+            async with semaphore:
                 logger.info(f"Starting processing for zipcode: {zipcode}")
                 scraper = AmazonScraper()
-                result = await asyncio.to_thread(scraper.get_product_info, request.asin, zipcode)
+                # Use the thread pool directly
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    thread_pool,
+                    scraper.get_product_info,
+                    request.asin,
+                    zipcode
+                )
                 if result:
                     results.append(result)
                     logger.success(f"Completed processing for zipcode: {zipcode}")
@@ -94,8 +105,12 @@ async def scrape_product(request: ScrapeRequest):
     # Create all tasks immediately - they'll wait on the semaphore internally
     tasks = [process_zipcode(zipcode) for zipcode in zipcodes_to_check]
     
-    # Wait for all tasks to complete
-    await asyncio.gather(*tasks)
+    try:
+        # Wait for all tasks to complete
+        await asyncio.gather(*tasks)
+    finally:
+        # Make sure we clean up the thread pool
+        thread_pool.shutdown(wait=False)
     
     if not results:
         raise HTTPException(status_code=404, detail="No data could be retrieved for the given ASIN")
