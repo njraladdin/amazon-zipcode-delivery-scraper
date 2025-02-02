@@ -52,7 +52,7 @@ def load_config():
     except Exception as e:
         logger.error(f"Error loading config.json: {e}")
         return {
-            "max_concurrent_zipcode_scrapers": 10,  # fallback default
+            "max_concurrent_zipcode_scrapers": 50,  # fallback default
             "port": 8080
         }
 
