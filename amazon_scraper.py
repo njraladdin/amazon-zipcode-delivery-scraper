@@ -335,7 +335,7 @@ class AmazonScraper:
         except Exception as e:
             self._log_error(f"Failed to save data to {filename}: {str(e)}")
 
-    async def _initialize_session(self, asin):
+    def _initialize_session(self, asin):
         """Initialize session with initial cookies and CSRF token"""
         if self.is_initialized:
             return
@@ -346,12 +346,9 @@ class AmazonScraper:
         while retry_count < max_retries:
             try:
                 self._log_info(f"Initializing session (attempt {retry_count + 1}/{max_retries})...")
-                
-                # Create fresh session for each attempt
                 self._create_fresh_session()
-                
-                # Steps 1-2: Get initial cookies and first CSRF token
                 self.initial_csrf_token = self._make_initial_product_page_request(asin)
+                
                 if not self.initial_csrf_token:
                     raise Exception("Failed to get initial CSRF token")
                     
@@ -362,15 +359,12 @@ class AmazonScraper:
             except Exception as e:
                 retry_count += 1
                 if retry_count < max_retries:
-                   # wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
                     self._log_warning(f"Session initialization failed (attempt {retry_count}/{max_retries}): {str(e)}")
-                    # self._log_info(f"Retrying in {wait_time} seconds with fresh session...")
-                    # await asyncio.sleep(wait_time)
                 else:
                     self._log_error(f"Session initialization failed after {max_retries} attempts: {str(e)}")
                     raise Exception("Failed to initialize session after maximum retries")
 
-    async def process_multiple_zipcodes(self, asin: str, zipcodes: List[str]) -> List[Dict[str, Any]]:
+    def process_multiple_zipcodes(self, asin: str, zipcodes: List[str]) -> List[Dict[str, Any]]:
         """Process multiple zipcodes using the same session"""
         results = []
         process_start = time.time()
@@ -382,7 +376,7 @@ class AmazonScraper:
         # Do initial session setup once
         init_start = time.time()
         try:
-            await self._initialize_session(asin)
+            self._initialize_session(asin)
             timings['session_initialization'] = round(time.time() - init_start, 2)
             self._log_info(f"\nSession initialization took: {timings['session_initialization']} seconds")
         except Exception as e:
@@ -420,7 +414,7 @@ class AmazonScraper:
                     continue
 
                 # Process offers and get result
-                result = await self._process_zipcode_with_session(asin, zipcode, csrf_token2)
+                result = self._process_zipcode_with_session(asin, zipcode, csrf_token2)
                 if result:
                     # Add the internal step timings to our zipcode timing
                     zipcode_timing['steps'].update(result['metadata']['step_timings'])
@@ -454,10 +448,10 @@ class AmazonScraper:
         
         return results
 
-    async def _process_zipcode_with_session(self, asin: str, zipcode: str, csrf_token: str) -> Dict[str, Any]:
+    def _process_zipcode_with_session(self, asin: str, zipcode: str, csrf_token: str) -> Dict[str, Any]:
         """Process a single zipcode with the existing session"""
         try:
-            timings = {}  # Dictionary to store timing information
+            timings = {}
             start_time = time.time()
             self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
             
@@ -478,7 +472,6 @@ class AmazonScraper:
             # Get and parse offers pages
             self._log_info("Parsing offers pages...")
             
-            # Time the all offers request
             all_offers_start = time.time()
             all_offers_html = self._get_offers_page(asin, csrf_token)
             timings['all_offers_request'] = round(time.time() - all_offers_start, 2)
