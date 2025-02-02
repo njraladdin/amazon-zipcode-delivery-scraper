@@ -89,7 +89,16 @@ class AmazonScraper:
         self._log_info("Created fresh session")
 
     def _make_initial_product_page_request(self, asin):
-        self._log_info(f"Making initial request for ASIN: {asin}")
+        total_start = time.time()
+        
+        # Time the session creation
+        session_start = time.time()
+        self._create_fresh_session()
+        session_time = round(time.time() - session_start, 2)
+        self._log_info(f"Session creation took: {session_time} seconds")
+        
+        # Time the homepage request
+        homepage_start = time.time()
         initial_url = "https://www.amazon.com"
         product_url = f"https://www.amazon.com/dp/{asin}"
 
@@ -109,8 +118,6 @@ class AmazonScraper:
             'viewport-width': '1120'
         }
 
-        # Time the homepage request
-        homepage_start = time.time()
         initial_response = self.session.get(initial_url, headers=headers)
         homepage_time = round(time.time() - homepage_start, 2)
         self._log_info(f"Homepage request took: {homepage_time} seconds")
