@@ -89,17 +89,8 @@ class AmazonScraper:
         self._log_info("Created fresh session")
 
     def _make_initial_product_page_request(self, asin):
-        total_start = time.time()
-        
-        # Time the session creation
-        session_start = time.time()
-        self._create_fresh_session()
-        session_time = round(time.time() - session_start, 2)
-        self._log_info(f"Session creation took: {session_time} seconds")
-        
-        # Time the homepage request
-        homepage_start = time.time()
-        initial_url = "https://www.amazon.com"
+        self._log_info(f"Making initial request for ASIN: {asin}")
+        initial_url = f"https://www.amazon.com/dp/{asin}"
         product_url = f"https://www.amazon.com/dp/{asin}"
 
         headers = {
@@ -118,19 +109,17 @@ class AmazonScraper:
             'viewport-width': '1120'
         }
 
-        initial_response = self.session.get(initial_url, headers=headers)
-        homepage_time = round(time.time() - homepage_start, 2)
-        self._log_info(f"Homepage request took: {homepage_time} seconds")
+        # Make initial request to amazon.com
+        # self._log_info("Accessing amazon.com homepage...")
+        # initial_response = self.session.get(initial_url, headers=headers)
         
-        if initial_response.status_code != 200:
-            self._log_error(f"Homepage request failed with status code: {initial_response.status_code}")
-            return None
+        # if initial_response.status_code != 200:
+        #     self._log_error(f"Homepage request failed with status code: {initial_response.status_code}")
+        #     return None
 
-        # Time the product page request
-        product_start = time.time()
+        # Then make the product page request
+        self._log_info("Accessing product page...")
         response = self.session.get(product_url, headers=headers)
-        product_time = round(time.time() - product_start, 2)
-        self._log_info(f"Product page request took: {product_time} seconds")
         
         if response.status_code != 200:
             self._log_error(f"Product page request failed with status code: {response.status_code}")
@@ -141,8 +130,8 @@ class AmazonScraper:
         for cookie_name, cookie_value in self.session.cookies.get_dict().items():
             print(f"{Fore.CYAN}[DEBUG] Cookie: {cookie_name} = {cookie_value[:20]}...{Style.RESET_ALL}")
 
-        # Time the CSRF extraction
-        parse_start = time.time()
+        # Parse the HTML and get CSRF token from modal data
+        self._log_info("Extracting CSRF token...")
         soup = BeautifulSoup(response.text, "html.parser")
         location_modal = soup.find(id="nav-global-location-data-modal-action")
         if location_modal:
@@ -151,8 +140,7 @@ class AmazonScraper:
                 modal_data = json.loads(data_modal)
                 if 'ajaxHeaders' in modal_data and 'anti-csrftoken-a2z' in modal_data['ajaxHeaders']:
                     csrf_token = modal_data['ajaxHeaders']['anti-csrftoken-a2z']
-                    parse_time = round(time.time() - parse_start, 2)
-                    self._log_info(f"CSRF token extraction took: {parse_time} seconds")
+                    self._log_success(f"CSRF token extracted: {csrf_token[:10]}...")
                     return csrf_token
         
         self._log_error("Failed to extract CSRF token")
@@ -360,10 +348,10 @@ class AmazonScraper:
                 self._log_info(f"Initializing session (attempt {retry_count + 1}/{max_retries})...")
                 
                 # Create fresh session for each attempt
-                self._create_fresh_session()  # This is quick
+                self._create_fresh_session()
                 
                 # Steps 1-2: Get initial cookies and first CSRF token
-                self.initial_csrf_token = self._make_initial_product_page_request(asin)  # This is what takes time
+                self.initial_csrf_token = self._make_initial_product_page_request(asin)
                 if not self.initial_csrf_token:
                     raise Exception("Failed to get initial CSRF token")
                     
