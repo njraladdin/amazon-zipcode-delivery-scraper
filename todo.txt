@@ -32,7 +32,7 @@ load zipcodes from file, and test with full zipcodes list, done
 
 
 reach 25 seconds: 
-- remove going to product page, immidiately get offers page
+- remove going to product page, immidiately get offers page, done (from 30 seconds to 20 seconds)
 - instead of doing the full process for each zipcode. allow each AmazonScraper instance to browse thourgh multiple zipcodes 
 
 make a check to see if all delivery times are the same, if yes, something could be wrong 

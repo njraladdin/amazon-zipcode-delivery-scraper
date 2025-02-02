@@ -19,11 +19,12 @@ from colorama import init, Fore, Style
 import time
 import random
 import aiohttp
-from typing import Dict, Any
+from typing import Dict, Any, List
 import threading
 from datetime import datetime
 from logger import setup_logger
 from utils import load_config
+import asyncio
 
 # Configuration constants
 SAVE_OUTPUT = False  # Set to True to save files to output folder
@@ -66,6 +67,9 @@ class AmazonScraper:
         self.output_dir = 'output'
         if SAVE_OUTPUT:
             os.makedirs(self.output_dir, exist_ok=True)
+
+        self.is_initialized = False
+        self.initial_csrf_token = None
 
     def _log_info(self, message):
         self.logger.info(message)
@@ -326,49 +330,63 @@ class AmazonScraper:
         except Exception as e:
             self._log_error(f"Failed to save data to {filename}: {str(e)}")
 
-    def get_product_info(self, asin: str, zipcode: str) -> Dict[str, Any]:
-        """
-        Get product and offers information for a specific ASIN and zipcode.
-        
-        Args:
-            asin (str): The Amazon ASIN
-            zipcode (str): The zipcode to check prices for
+    async def _initialize_session(self, asin):
+        """Initialize session with initial cookies and CSRF token"""
+        if self.is_initialized:
+            return
             
-        Returns:
-            dict: Final data including offers and metadata
-        """
+        self._log_info("Initializing session...")
+        # Steps 1-2: Get initial cookies and first CSRF token
+        self.initial_csrf_token = self._make_initial_product_page_request(asin)
+        if not self.initial_csrf_token:
+            raise Exception("Failed to initialize session")
+            
+        self.is_initialized = True
+        self._log_success("Session initialized successfully")
+
+    async def process_multiple_zipcodes(self, asin: str, zipcodes: List[str]) -> List[Dict[str, Any]]:
+        """Process multiple zipcodes using the same session"""
+        results = []
+        
+        # Do initial session setup once
+        await self._initialize_session(asin)
+        
+        # Process each zipcode sequentially with the initialized session
+        for zipcode in zipcodes:
+            try:
+                self._log_info(f"Processing zipcode {zipcode} with existing session")
+                
+                # Steps 3-7: Per-zipcode processing
+                csrf_token2 = self._make_modal_html_request(self.initial_csrf_token)
+                if not csrf_token2:
+                    self._log_error(f"Failed to get modal CSRF token for zipcode {zipcode}")
+                    continue
+
+                change_response = self._make_change_zipcode_request(csrf_token2, zipcode)
+                if not change_response:
+                    self._log_error(f"Failed to change zipcode to {zipcode}")
+                    continue
+
+                # Rest of the zipcode processing...
+                result = await self._process_zipcode_with_session(asin, zipcode, csrf_token2)
+                if result:
+                    results.append(result)
+                    
+                # Add small delay between zipcodes to avoid rate limiting
+                #await asyncio.sleep(random.uniform(0.5, 1.5))
+                
+            except Exception as e:
+                self._log_error(f"Error processing zipcode {zipcode}: {str(e)}")
+                continue
+                
+        return results
+
+    async def _process_zipcode_with_session(self, asin: str, zipcode: str, csrf_token: str) -> Dict[str, Any]:
+        """Process a single zipcode with the existing session"""
         try:
             start_time = time.time()
             self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
             
-            # Get CSRF tokens and change zipcode
-            csrf_token1 = self._make_initial_product_page_request(asin)
-            if not csrf_token1:
-                self._log_error(f"Failed to get initial CSRF token for zipcode {zipcode}")
-                return None
-
-            csrf_token2 = self._make_modal_html_request(csrf_token1)
-            if not csrf_token2:
-                self._log_error(f"Failed to get modal CSRF token for zipcode {zipcode}")
-                return None
-
-            # Add more detailed logging for each step
-            self._log_info(f"Changing zipcode to {zipcode} with token {csrf_token2[:10]}...")
-            change_response = self._make_change_zipcode_request(csrf_token2, zipcode)
-            if not change_response:
-                self._log_error(f"Failed to change zipcode to {zipcode}")
-                return None
-            
-            # # Get and save product page HTML after zipcode change
-            # product_page_html = self._get_product_page(asin, csrf_token2)
-            
-            # # Verify zipcode change
-            # if not self._verify_zipcode_change(product_page_html, zipcode):
-            #     self._log_error("Zipcode change verification failed - aborting")
-            #     return None
-
-            # self._save_to_file(product_page_html, f'product_page_{asin}_{zipcode}.html', is_html=True)
-
             # Initialize final data object
             final_data = {
                 "asin": asin,
@@ -386,7 +404,7 @@ class AmazonScraper:
             self._log_info("Parsing offers pages...")
             
             # Get all offers
-            all_offers_html = self._get_offers_page(asin, csrf_token2)
+            all_offers_html = self._get_offers_page(asin, csrf_token)
             try:
                 
                 # Parse offers and get prime filter status
@@ -401,7 +419,7 @@ class AmazonScraper:
                 # Only make Prime-only request if Prime filter exists
                 if has_prime_filter:
                     # Get Prime-only offers
-                    prime_offers_html = self._get_offers_page(asin, csrf_token2, prime_only=True)
+                    prime_offers_html = self._get_offers_page(asin, csrf_token, prime_only=True)
                     try:
                         # Save Prime offers HTML for debugging
                         self._save_to_file(prime_offers_html, f'offers_html_prime_{asin}_{zipcode}.html', is_html=True)
@@ -453,13 +471,14 @@ if __name__ == "__main__":
     try:
         scraper = AmazonScraper()
         asin = "B09X7CRKRZ"
-        zipcode = "98101"
+        zipcodes = ["98101", "98102", "98103"]
         
-        result = scraper.get_product_info(asin, zipcode)
-        if result:
+        results = asyncio.run(scraper.process_multiple_zipcodes(asin, zipcodes))
+        if results:
             print(f"\n{Fore.GREEN}[SUCCESS] Data collection completed successfully!{Style.RESET_ALL}")
-            print(f"Total offers: {result['metadata']['total_offers']}")
-            print(f"Prime eligible offers: {result['metadata']['prime_eligible_offers']}")
+            for result in results:
+                print(f"Total offers: {result['metadata']['total_offers']}")
+                print(f"Prime eligible offers: {result['metadata']['prime_eligible_offers']}")
         else:
             print(f"\n{Fore.RED}[ERROR] Failed to collect data{Style.RESET_ALL}")
     except Exception as e:
