@@ -48,20 +48,11 @@ class AmazonScraper:
             ip, port, username, password = proxy_line.split(':')
             
             # Format the proxy string
-            proxy = f"http://{username}:{password}@{ip}:{port}"
+            self.proxy = f"http://{username}:{password}@{ip}:{port}"
             self.logger.success(f"AmazonScraper initialized with proxy: {ip}:{port}")
         else:
-            proxy = None
+            self.proxy = None
             self.logger.info("AmazonScraper initialized without proxy (disabled in config)")
-        
-        self.session = tls_client.Session(
-            client_identifier="chrome126",
-            random_tls_extension_order=True
-        )
-        
-        # Set proxy if enabled
-        if proxy:
-            self.session.proxies = proxy
         
         # Only create output directory if saving is enabled
         self.output_dir = 'output'
@@ -70,6 +61,7 @@ class AmazonScraper:
 
         self.is_initialized = False
         self.initial_csrf_token = None
+        self.session = None  # Will be created when needed
 
     def _log_info(self, message):
         self.logger.info(message)
@@ -82,6 +74,19 @@ class AmazonScraper:
 
     def _log_error(self, message):
         self.logger.error(message)
+
+    def _create_fresh_session(self):
+        """Create a new session with current configuration"""
+        self.session = tls_client.Session(
+            client_identifier="chrome126",
+            random_tls_extension_order=True
+        )
+        
+        # Apply proxy if configured
+        if self.proxy:
+            self.session.proxies = self.proxy
+        
+        self._log_info("Created fresh session")
 
     def _make_initial_product_page_request(self, asin):
         self._log_info(f"Making initial request for ASIN: {asin}")
@@ -341,6 +346,10 @@ class AmazonScraper:
         while retry_count < max_retries:
             try:
                 self._log_info(f"Initializing session (attempt {retry_count + 1}/{max_retries})...")
+                
+                # Create fresh session for each attempt
+                self._create_fresh_session()
+                
                 # Steps 1-2: Get initial cookies and first CSRF token
                 self.initial_csrf_token = self._make_initial_product_page_request(asin)
                 if not self.initial_csrf_token:
@@ -355,7 +364,7 @@ class AmazonScraper:
                 if retry_count < max_retries:
                     wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
                     self._log_warning(f"Session initialization failed (attempt {retry_count}/{max_retries}): {str(e)}")
-                    self._log_info(f"Retrying in {wait_time} seconds...")
+                    self._log_info(f"Retrying in {wait_time} seconds with fresh session...")
                     await asyncio.sleep(wait_time)
                 else:
                     self._log_error(f"Session initialization failed after {max_retries} attempts: {str(e)}")
