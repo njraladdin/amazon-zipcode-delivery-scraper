@@ -10,8 +10,6 @@ from pathlib import Path
 from logger import setup_logger
 from utils import load_config
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-import time
 
 # Load default zipcodes from JSON file
 def load_default_zipcodes():
@@ -161,13 +159,21 @@ if __name__ == "__main__":
     logger.info(f"Local IP: {local_ip}")
     logger.info(f"Server will run at: http://{local_ip}:{CONFIG['port']}")
     
-    # Start bandwidth monitoring task
-    asyncio.create_task(log_bandwidth_usage())
+    # Create a new event loop and set it as the default
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
-    uvicorn.run(
-        app, 
+    # Start bandwidth monitoring task
+    loop.create_task(log_bandwidth_usage())
+    
+    # Run uvicorn with the loop
+    config = uvicorn.Config(
+        app,
         host="0.0.0.0",
         port=CONFIG["port"],
         log_level="debug",
-        access_log=True
+        access_log=True,
+        loop=loop
     )
+    server = uvicorn.Server(config)
+    loop.run_until_complete(server.serve())
