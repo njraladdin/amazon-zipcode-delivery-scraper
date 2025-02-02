@@ -52,7 +52,7 @@ print(CONFIG)
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape_product(request: ScrapeRequest):
     results = []
-    failed_count = 0
+    failed_locations = set()  # Track failed zipcodes
     
     # Use provided zipcodes or default ones
     zipcodes_to_check = request.zipcodes if request.zipcodes else DEFAULT_ZIPCODES
@@ -81,15 +81,16 @@ async def scrape_product(request: ScrapeRequest):
                     lambda: asyncio.run(scraper.process_multiple_zipcodes(request.asin, batch_zipcodes))
                 )
                 
-                if batch_results:
-                    logger.success(f"Successfully processed batch with zipcodes: {batch_zipcodes}")
-                    return batch_results
-                else:
-                    logger.error(f"Failed to process batch with zipcodes: {batch_zipcodes}")
-                    return []
+                # Track failed zipcodes from this batch
+                successful_zipcodes = {result['zip_code'] for result in batch_results if result}
+                failed_zipcodes = set(batch_zipcodes) - successful_zipcodes
+                failed_locations.update(failed_zipcodes)
+                
+                return batch_results
                     
         except Exception as e:
             logger.error(f"Error processing batch {batch_zipcodes}: {str(e)}")
+            failed_locations.update(batch_zipcodes)  # Mark all zipcodes in failed batch
             return []
     
     try:
@@ -101,8 +102,6 @@ async def scrape_product(request: ScrapeRequest):
         for batch_result in batch_results:
             if batch_result:
                 results.extend(batch_result)
-            else:
-                failed_count += 1
                 
     finally:
         thread_pool.shutdown(wait=False)
@@ -115,7 +114,7 @@ async def scrape_product(request: ScrapeRequest):
         results=results,
         total_locations_processed=len(zipcodes_to_check),
         successful_locations=len(results),
-        failed_locations=failed_count
+        failed_locations=len(failed_locations)  # Now accurately tracks failed locations
     )
 
 if __name__ == "__main__":
