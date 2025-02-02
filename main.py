@@ -58,7 +58,7 @@ def load_config():
 
 # Load configuration
 CONFIG = load_config()
-
+print(CONFIG)
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape_product(request: ScrapeRequest):
     results = []
