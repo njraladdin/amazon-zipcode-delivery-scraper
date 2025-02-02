@@ -49,7 +49,7 @@ class AmazonScraper:
             random_tls_extension_order=True
         )
         # Set proxy directly on the session
-        self.session.proxies = proxy
+        #self.session.proxies = proxy
         
         # Only create output directory if saving is enabled
         self.output_dir = 'output'
