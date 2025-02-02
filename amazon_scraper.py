@@ -362,10 +362,10 @@ class AmazonScraper:
             except Exception as e:
                 retry_count += 1
                 if retry_count < max_retries:
-                    wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
+                   # wait_time = 2 ** retry_count  # Exponential backoff: 2, 4, 8 seconds
                     self._log_warning(f"Session initialization failed (attempt {retry_count}/{max_retries}): {str(e)}")
-                    self._log_info(f"Retrying in {wait_time} seconds with fresh session...")
-                    await asyncio.sleep(wait_time)
+                    # self._log_info(f"Retrying in {wait_time} seconds with fresh session...")
+                    # await asyncio.sleep(wait_time)
                 else:
                     self._log_error(f"Session initialization failed after {max_retries} attempts: {str(e)}")
                     raise Exception("Failed to initialize session after maximum retries")
