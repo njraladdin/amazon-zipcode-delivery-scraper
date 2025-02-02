@@ -109,17 +109,21 @@ class AmazonScraper:
             'viewport-width': '1120'
         }
 
-        # Make initial request to amazon.com
-        self._log_info("Accessing amazon.com homepage...")
+        # Time the homepage request
+        homepage_start = time.time()
         initial_response = self.session.get(initial_url, headers=headers)
+        homepage_time = round(time.time() - homepage_start, 2)
+        self._log_info(f"Homepage request took: {homepage_time} seconds")
         
         if initial_response.status_code != 200:
             self._log_error(f"Homepage request failed with status code: {initial_response.status_code}")
             return None
 
-        # Then make the product page request
-        self._log_info("Accessing product page...")
+        # Time the product page request
+        product_start = time.time()
         response = self.session.get(product_url, headers=headers)
+        product_time = round(time.time() - product_start, 2)
+        self._log_info(f"Product page request took: {product_time} seconds")
         
         if response.status_code != 200:
             self._log_error(f"Product page request failed with status code: {response.status_code}")
@@ -130,8 +134,8 @@ class AmazonScraper:
         for cookie_name, cookie_value in self.session.cookies.get_dict().items():
             print(f"{Fore.CYAN}[DEBUG] Cookie: {cookie_name} = {cookie_value[:20]}...{Style.RESET_ALL}")
 
-        # Parse the HTML and get CSRF token from modal data
-        self._log_info("Extracting CSRF token...")
+        # Time the CSRF extraction
+        parse_start = time.time()
         soup = BeautifulSoup(response.text, "html.parser")
         location_modal = soup.find(id="nav-global-location-data-modal-action")
         if location_modal:
@@ -140,7 +144,8 @@ class AmazonScraper:
                 modal_data = json.loads(data_modal)
                 if 'ajaxHeaders' in modal_data and 'anti-csrftoken-a2z' in modal_data['ajaxHeaders']:
                     csrf_token = modal_data['ajaxHeaders']['anti-csrftoken-a2z']
-                    self._log_success(f"CSRF token extracted: {csrf_token[:10]}...")
+                    parse_time = round(time.time() - parse_start, 2)
+                    self._log_info(f"CSRF token extraction took: {parse_time} seconds")
                     return csrf_token
         
         self._log_error("Failed to extract CSRF token")
@@ -348,10 +353,10 @@ class AmazonScraper:
                 self._log_info(f"Initializing session (attempt {retry_count + 1}/{max_retries})...")
                 
                 # Create fresh session for each attempt
-                self._create_fresh_session()
+                self._create_fresh_session()  # This is quick
                 
                 # Steps 1-2: Get initial cookies and first CSRF token
-                self.initial_csrf_token = self._make_initial_product_page_request(asin)
+                self.initial_csrf_token = self._make_initial_product_page_request(asin)  # This is what takes time
                 if not self.initial_csrf_token:
                     raise Exception("Failed to get initial CSRF token")
                     
