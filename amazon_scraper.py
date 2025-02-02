@@ -23,6 +23,7 @@ from typing import Dict, Any
 import threading
 from datetime import datetime
 from logger import setup_logger
+from utils import load_config
 
 # Configuration constants
 SAVE_OUTPUT = False  # Set to True to save files to output folder
@@ -37,25 +38,34 @@ class AmazonScraper:
         with open('proxies.txt', 'r') as f:
             proxies = [line.strip() for line in f.readlines() if line.strip()]
         
-        # Randomly select a proxy
-        proxy_line = random.choice(proxies)
-        ip, port, username, password = proxy_line.split(':')
+        # Get config
+        config = load_config()
         
-        # Format the proxy string
-        proxy = f"http://{username}:{password}@{ip}:{port}"
+        if config.get('allow_proxy', True):
+            # Randomly select a proxy
+            proxy_line = random.choice(proxies)
+            ip, port, username, password = proxy_line.split(':')
+            
+            # Format the proxy string
+            proxy = f"http://{username}:{password}@{ip}:{port}"
+            self.logger.success(f"AmazonScraper initialized with proxy: {ip}:{port}")
+        else:
+            proxy = None
+            self.logger.info("AmazonScraper initialized without proxy (disabled in config)")
         
         self.session = tls_client.Session(
             client_identifier="chrome126",
             random_tls_extension_order=True
         )
-        # Set proxy directly on the session
-        #self.session.proxies = proxy
+        
+        # Set proxy if enabled
+        if proxy:
+            self.session.proxies = proxy
         
         # Only create output directory if saving is enabled
         self.output_dir = 'output'
         if SAVE_OUTPUT:
             os.makedirs(self.output_dir, exist_ok=True)
-        self.logger.success(f"AmazonScraper initialized with proxy: {ip}:{port}")
 
     def _log_info(self, message):
         self.logger.info(message)

@@ -8,6 +8,7 @@ import socket
 import json
 from pathlib import Path
 from logger import setup_logger
+from utils import load_config
 
 # Constants
 MAX_CONCURRENT_ZIPCODE_SCRAPERS = 10  # Maximum number of concurrent zipcode processing operations
@@ -43,18 +44,6 @@ class ScrapeResponse(BaseModel):
 
 # After imports
 logger = setup_logger('FastAPI')
-
-def load_config():
-    config_path = Path(__file__).parent / "config.json"
-    try:
-        with open(config_path, "r") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Error loading config.json: {e}")
-        return {
-            "max_concurrent_zipcode_scrapers": 50,  # fallback default
-            "port": 8080
-        }
 
 # Load configuration
 CONFIG = load_config()
