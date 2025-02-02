@@ -90,7 +90,7 @@ class AmazonScraper:
 
     def _make_initial_product_page_request(self, asin):
         self._log_info(f"Making initial request for ASIN: {asin}")
-        initial_url = f"https://www.amazon.com/dp/{asin}"
+        initial_url = "https://www.amazon.com"
         product_url = f"https://www.amazon.com/dp/{asin}"
 
         headers = {

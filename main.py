@@ -11,9 +11,6 @@ from logger import setup_logger
 from utils import load_config
 from concurrent.futures import ThreadPoolExecutor
 
-# Constants
-MAX_CONCURRENT_ZIPCODE_SCRAPERS = 10  # Maximum number of concurrent zipcode processing operations
-
 # Load default zipcodes from JSON file
 def load_default_zipcodes():
     json_path = Path(__file__).parent / "zipcodes.json"
@@ -63,31 +60,29 @@ async def scrape_product(request: ScrapeRequest):
         for i in range(0, len(zipcodes_to_check), CONFIG["batch_size"])
     ]
     
-    # Use CONFIG for concurrent scrapers (one per batch)
-    semaphore = asyncio.Semaphore(CONFIG["max_concurrent_zipcode_scrapers"])
+    # Use CONFIG for thread pool only
     thread_pool = ThreadPoolExecutor(max_workers=CONFIG["max_concurrent_zipcode_scrapers"])
     
     async def process_batch(batch_zipcodes: List[str]):
         try:
-            async with semaphore:
-                # Create one scraper instance per batch
-                scraper = AmazonScraper()
-                logger.info(f"Starting batch processing for zipcodes: {batch_zipcodes}")
+            # Create one scraper instance per batch
+            scraper = AmazonScraper()
+            logger.info(f"Starting batch processing for zipcodes: {batch_zipcodes}")
+            
+            loop = asyncio.get_running_loop()
+            # Run the blocking scraper method in thread pool
+            batch_results = await loop.run_in_executor(
+                thread_pool,
+                lambda: asyncio.run(scraper.process_multiple_zipcodes(request.asin, batch_zipcodes))
+            )
+            
+            # Track failed zipcodes from this batch
+            successful_zipcodes = {result['zip_code'] for result in batch_results if result}
+            failed_zipcodes = set(batch_zipcodes) - successful_zipcodes
+            failed_locations.update(failed_zipcodes)
+            
+            return batch_results
                 
-                loop = asyncio.get_running_loop()
-                # Run the blocking scraper method in thread pool
-                batch_results = await loop.run_in_executor(
-                    thread_pool,
-                    lambda: asyncio.run(scraper.process_multiple_zipcodes(request.asin, batch_zipcodes))
-                )
-                
-                # Track failed zipcodes from this batch
-                successful_zipcodes = {result['zip_code'] for result in batch_results if result}
-                failed_zipcodes = set(batch_zipcodes) - successful_zipcodes
-                failed_locations.update(failed_zipcodes)
-                
-                return batch_results
-                    
         except Exception as e:
             logger.error(f"Error processing batch {batch_zipcodes}: {str(e)}")
             failed_locations.update(batch_zipcodes)  # Mark all zipcodes in failed batch
