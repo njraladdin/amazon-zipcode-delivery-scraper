@@ -46,44 +46,6 @@ logger = setup_logger('FastAPI')
 # Load configuration
 CONFIG = load_config()
 print(CONFIG)
-
-def get_network_usage():
-    """Get current bandwidth usage from /proc/net/dev"""
-    try:
-        with open('/proc/net/dev', 'r') as f:
-            lines = f.readlines()[2:]  # Skip header lines
-        
-        total_bytes_rx = 0
-        total_bytes_tx = 0
-        
-        for line in lines:
-            # Split line and remove empty spaces
-            interface_data = line.strip().split()
-            if interface_data[0].startswith(('eth', 'wlan', 'ens')):  # Common interface names
-                # Received bytes is at index 1, transmitted at index 9
-                total_bytes_rx += int(interface_data[1])
-                total_bytes_tx += int(interface_data[9])
-        
-        return total_bytes_rx, total_bytes_tx
-    except Exception as e:
-        logger.error(f"Error getting network usage: {e}")
-        return 0, 0
-
-async def log_bandwidth_usage():
-    """Periodically log bandwidth usage"""
-    prev_rx, prev_tx = get_network_usage()
-    while True:
-        await asyncio.sleep(2)  # Log every minute
-        curr_rx, curr_tx = get_network_usage()
-        
-        # Calculate bandwidth in MB/s
-        rx_speed = (curr_rx - prev_rx) / (1024 * 1024 * 60)  # MB/s
-        tx_speed = (curr_tx - prev_tx) / (1024 * 1024 * 60)  # MB/s
-        
-        logger.info(f"Bandwidth Usage - Download: {rx_speed:.2f} MB/s, Upload: {tx_speed:.2f} MB/s")
-        
-        prev_rx, prev_tx = curr_rx, curr_tx
-
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape_product(request: ScrapeRequest):
     results = []
@@ -159,21 +121,10 @@ if __name__ == "__main__":
     logger.info(f"Local IP: {local_ip}")
     logger.info(f"Server will run at: http://{local_ip}:{CONFIG['port']}")
     
-    # Create a new event loop and set it as the default
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Start bandwidth monitoring task
-    loop.create_task(log_bandwidth_usage())
-    
-    # Run uvicorn with the loop
-    config = uvicorn.Config(
-        app,
+    uvicorn.run(
+        app, 
         host="0.0.0.0",
         port=CONFIG["port"],
         log_level="debug",
-        access_log=True,
-        loop=loop
+        access_log=True
     )
-    server = uvicorn.Server(config)
-    loop.run_until_complete(server.serve())
