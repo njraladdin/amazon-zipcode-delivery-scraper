@@ -89,20 +89,29 @@ async def scrape_product(request: ScrapeRequest):
         futures = []
         active_futures = set()
         
-        # Balance between speed and stability
-        initial_concurrent = 5  # Not too aggressive to start
-        max_concurrent = CONFIG.get("max_concurrent_zipcode_scrapers", 10)
+        # More aggressive settings for cloud environment
+        initial_concurrent = 10  # Start higher
+        max_concurrent = CONFIG.get("max_concurrent_zipcode_scrapers", 50)  # Allow more max
         current_concurrent = initial_concurrent
-        scale_up_delay = 0.3  # Give a bit more time between increases
-        scale_up_increment = 2  # More moderate increment
+        scale_up_delay = 0.2  # Faster scaling
         
-        # Add backoff when bandwidth gets high
+        # Adjust scale increment for cloud
         def get_scale_increment(usage_pct):
             if usage_pct > 60:
-                return 1  # Slow down scaling when usage is high
+                return 3  # Still decent scaling at high usage
             if usage_pct > 40:
-                return 2  # Moderate scaling at medium usage
-            return 3  # Fast scaling when usage is low
+                return 5  # More aggressive at medium
+            return 8  # Very aggressive when usage is low
+
+        # Adjust usage threshold for cloud
+        if (current_time - last_scale_up > scale_up_delay and 
+            current_concurrent < max_concurrent):
+            usage = resource_monitor.get_statistics_summary().get('download_usage_pct', {}).get('current', 0)
+            if usage < 80:  # Higher threshold since we have more headroom
+                increment = get_scale_increment(usage)
+                current_concurrent = min(current_concurrent + increment, max_concurrent)
+                last_scale_up = current_time
+                logger.info(f"Scaling up to {current_concurrent} concurrent requests (usage: {usage:.1f}%)")
 
         # Process batches with dynamic concurrency
         batch_index = 0
@@ -125,16 +134,6 @@ async def scrape_product(request: ScrapeRequest):
                 except Exception as e:
                     logger.error(f"Error processing future: {str(e)}")
                 active_futures.remove(future)
-
-            # Scale up concurrency more aggressively if conditions are good
-            if (current_time - last_scale_up > scale_up_delay and 
-                current_concurrent < max_concurrent):
-                usage = resource_monitor.get_statistics_summary().get('download_usage_pct', {}).get('current', 0)
-                if usage < 70:  # Only scale if usage is reasonable
-                    increment = get_scale_increment(usage)
-                    current_concurrent = min(current_concurrent + increment, max_concurrent)
-                    last_scale_up = current_time
-                    logger.info(f"Scaling up to {current_concurrent} concurrent requests (usage: {usage:.1f}%)")
 
             # Submit new batches if we have capacity
             while (batch_index < len(zipcode_batches) and 
