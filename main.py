@@ -13,6 +13,7 @@ from asyncio import Semaphore
 from resource_monitor import ResourceMonitor
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import time
 
 # Load default zipcodes from JSON file
 def load_default_zipcodes():
@@ -59,6 +60,7 @@ thread_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SCRAPERS)
 
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape_product(request: ScrapeRequest):
+    resource_monitor = ResourceMonitor(monitor_interval=0.1)
     resource_monitor.start()
     
     try:
@@ -68,14 +70,10 @@ async def scrape_product(request: ScrapeRequest):
 
         def process_batch(batch_zipcodes: List[str]) -> tuple:
             try:
-                # Create scraper instance per thread
                 scraper = AmazonScraper()
                 logger.info(f"Processing zipcodes: {batch_zipcodes}")
-                
-                # Run the sync code directly without asyncio
                 batch_results = scraper.process_multiple_zipcodes(request.asin, batch_zipcodes)
                 return batch_results, batch_zipcodes
-                
             except Exception as e:
                 logger.error(f"Error processing batch {batch_zipcodes}: {str(e)}")
                 return None, batch_zipcodes
@@ -87,23 +85,66 @@ async def scrape_product(request: ScrapeRequest):
             for i in range(0, len(zipcodes_to_check), batch_size)
         ]
         
-        # Submit all batches to thread pool and wait for completion
-        futures = [thread_pool.submit(process_batch, batch) for batch in zipcode_batches]
+        # Initialize futures list
+        futures = []
+        active_futures = set()
         
-        # Process results as they complete
-        for future in futures:
-            try:
-                result, batch_zipcodes = future.result()
-                if result:
-                    results.extend(result)
-                    successful_zipcodes = {r['zip_code'] for r in result if r}
-                    failed_zipcodes = set(batch_zipcodes) - successful_zipcodes
-                    failed_locations.update(failed_zipcodes)
-                else:
-                    failed_locations.update(batch_zipcodes)
-            except Exception as e:
-                logger.error(f"Error processing future: {str(e)}")
-                continue
+        # Balance between speed and stability
+        initial_concurrent = 5  # Not too aggressive to start
+        max_concurrent = CONFIG.get("max_concurrent_zipcode_scrapers", 10)
+        current_concurrent = initial_concurrent
+        scale_up_delay = 0.3  # Give a bit more time between increases
+        scale_up_increment = 2  # More moderate increment
+        
+        # Add backoff when bandwidth gets high
+        def get_scale_increment(usage_pct):
+            if usage_pct > 60:
+                return 1  # Slow down scaling when usage is high
+            if usage_pct > 40:
+                return 2  # Moderate scaling at medium usage
+            return 3  # Fast scaling when usage is low
+
+        # Process batches with dynamic concurrency
+        batch_index = 0
+        last_scale_up = time.time()
+        while batch_index < len(zipcode_batches) or active_futures:
+            current_time = time.time()
+            
+            # Clean up completed futures
+            done_futures = {f for f in active_futures if f.done()}
+            for future in done_futures:
+                try:
+                    result, batch_zipcodes = future.result()
+                    if result:
+                        results.extend(result)
+                        successful_zipcodes = {r['zip_code'] for r in result if r}
+                        failed_zipcodes = set(batch_zipcodes) - successful_zipcodes
+                        failed_locations.update(failed_zipcodes)
+                    else:
+                        failed_locations.update(batch_zipcodes)
+                except Exception as e:
+                    logger.error(f"Error processing future: {str(e)}")
+                active_futures.remove(future)
+
+            # Scale up concurrency more aggressively if conditions are good
+            if (current_time - last_scale_up > scale_up_delay and 
+                current_concurrent < max_concurrent):
+                usage = resource_monitor.get_statistics_summary().get('download_usage_pct', {}).get('current', 0)
+                if usage < 70:  # Only scale if usage is reasonable
+                    increment = get_scale_increment(usage)
+                    current_concurrent = min(current_concurrent + increment, max_concurrent)
+                    last_scale_up = current_time
+                    logger.info(f"Scaling up to {current_concurrent} concurrent requests (usage: {usage:.1f}%)")
+
+            # Submit new batches if we have capacity
+            while (batch_index < len(zipcode_batches) and 
+                   len(active_futures) < current_concurrent):
+                future = thread_pool.submit(process_batch, zipcode_batches[batch_index])
+                active_futures.add(future)
+                futures.append(future)
+                batch_index += 1
+
+            await asyncio.sleep(0.1)  # Small delay to prevent CPU spinning
 
     finally:
         resource_monitor.stop()

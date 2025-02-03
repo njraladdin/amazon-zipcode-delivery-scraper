@@ -10,3 +10,5 @@ output/
 # Ignore log files
 logs/
 *.log
+
+bandwidth_cache.json
