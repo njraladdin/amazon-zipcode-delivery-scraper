@@ -103,16 +103,6 @@ async def scrape_product(request: ScrapeRequest):
                 return 5  # More aggressive at medium
             return 8  # Very aggressive when usage is low
 
-        # Adjust usage threshold for cloud
-        if (current_time - last_scale_up > scale_up_delay and 
-            current_concurrent < max_concurrent):
-            usage = resource_monitor.get_statistics_summary().get('download_usage_pct', {}).get('current', 0)
-            if usage < 80:  # Higher threshold since we have more headroom
-                increment = get_scale_increment(usage)
-                current_concurrent = min(current_concurrent + increment, max_concurrent)
-                last_scale_up = current_time
-                logger.info(f"Scaling up to {current_concurrent} concurrent requests (usage: {usage:.1f}%)")
-
         # Process batches with dynamic concurrency
         batch_index = 0
         last_scale_up = time.time()
@@ -134,6 +124,16 @@ async def scrape_product(request: ScrapeRequest):
                 except Exception as e:
                     logger.error(f"Error processing future: {str(e)}")
                 active_futures.remove(future)
+
+            # Adjust usage threshold for cloud - moved inside loop
+            if (current_time - last_scale_up > scale_up_delay and 
+                current_concurrent < max_concurrent):
+                usage = resource_monitor.get_statistics_summary().get('download_usage_pct', {}).get('current', 0)
+                if usage < 80:  # Higher threshold since we have more headroom
+                    increment = get_scale_increment(usage)
+                    current_concurrent = min(current_concurrent + increment, max_concurrent)
+                    last_scale_up = current_time
+                    logger.info(f"Scaling up to {current_concurrent} concurrent requests (usage: {usage:.1f}%)")
 
             # Submit new batches if we have capacity
             while (batch_index < len(zipcode_batches) and 
