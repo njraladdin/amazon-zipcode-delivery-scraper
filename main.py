@@ -89,20 +89,14 @@ async def scrape_product(request: ScrapeRequest):
         futures = []
         active_futures = set()
         
-        # More aggressive settings for cloud environment
-        initial_concurrent = 10  # Start higher
-        max_concurrent = CONFIG.get("max_concurrent_zipcode_scrapers", 50)  # Allow more max
+        # Load scaling settings from config
+        scaling_config = CONFIG.get("concurrent_requests_control", {})
+        initial_concurrent = scaling_config.get("initial_concurrent", 20)
+        max_concurrent = CONFIG.get("max_concurrent_zipcode_scrapers", 200)
         current_concurrent = initial_concurrent
-        scale_up_delay = 0.2  # Faster scaling
+        scale_up_delay = scaling_config.get("scale_up_delay", 0.2)
+        scale_increment = scaling_config.get("scale_increment", 10)
         
-        # Adjust scale increment for cloud
-        def get_scale_increment(usage_pct):
-            if usage_pct > 60:
-                return 3  # Still decent scaling at high usage
-            if usage_pct > 40:
-                return 5  # More aggressive at medium
-            return 8  # Very aggressive when usage is low
-
         # Process batches with dynamic concurrency
         batch_index = 0
         last_scale_up = time.time()
@@ -125,13 +119,12 @@ async def scrape_product(request: ScrapeRequest):
                     logger.error(f"Error processing future: {str(e)}")
                 active_futures.remove(future)
 
-            # Adjust usage threshold for cloud - moved inside loop
+            # Simple scaling check
             if (current_time - last_scale_up > scale_up_delay and 
                 current_concurrent < max_concurrent):
                 usage = resource_monitor.get_statistics_summary().get('download_usage_pct', {}).get('current', 0)
-                if usage < 80:  # Higher threshold since we have more headroom
-                    increment = get_scale_increment(usage)
-                    current_concurrent = min(current_concurrent + increment, max_concurrent)
+                if usage < 80:  # Hardcoded threshold
+                    current_concurrent = min(current_concurrent + scale_increment, max_concurrent)
                     last_scale_up = current_time
                     logger.info(f"Scaling up to {current_concurrent} concurrent requests (usage: {usage:.1f}%)")
 
