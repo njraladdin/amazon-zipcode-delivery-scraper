@@ -4,8 +4,8 @@
     "allow_proxy": true,
     "batch_size": 5,
     "concurrent_requests_control": { 
-        "initial_concurrent": 20,
-        "scale_up_delay": 0.2,
-        "scale_increment": 20
+        "initial_concurrent": 80,
+        "scale_up_delay": 0.5,
+        "scale_increment": 30
     }
 } 
