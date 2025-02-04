@@ -339,30 +339,16 @@ class AmazonScraper:
         """Initialize session with initial cookies and CSRF token"""
         if self.is_initialized:
             return
-            
-        max_retries = 3
-        retry_count = 0
         
-        while retry_count < max_retries:
-            try:
-                self._log_info(f"Initializing session (attempt {retry_count + 1}/{max_retries})...")
-                self._create_fresh_session()
-                self.initial_csrf_token = self._make_initial_product_page_request(asin)
-                
-                if not self.initial_csrf_token:
-                    raise Exception("Failed to get initial CSRF token")
-                    
-                self.is_initialized = True
-                self._log_success("Session initialized successfully")
-                return
-                
-            except Exception as e:
-                retry_count += 1
-                if retry_count < max_retries:
-                    self._log_warning(f"Session initialization failed (attempt {retry_count}/{max_retries}): {str(e)}")
-                else:
-                    self._log_error(f"Session initialization failed after {max_retries} attempts: {str(e)}")
-                    raise Exception("Failed to initialize session after maximum retries")
+        self._log_info("Initializing session...")
+        self._create_fresh_session()
+        self.initial_csrf_token = self._make_initial_product_page_request(asin)
+        
+        if not self.initial_csrf_token:
+            raise Exception("Failed to get initial CSRF token")
+        
+        self.is_initialized = True
+        self._log_success("Session initialized successfully")
 
     def process_multiple_zipcodes(self, asin: str, zipcodes: List[str]) -> List[Dict[str, Any]]:
         """Process multiple zipcodes using the same session"""
