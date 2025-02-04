@@ -38,7 +38,7 @@ class SessionPool:
                 self.factory_thread.start()
                 self.logger.info("Started background session factory")
             else:
-                self.logger.debug("Factory thread already running")
+                self.logger.info("Factory thread already running")
         
     def _session_factory_worker(self):
         """Background worker that maintains minimum session count with limited concurrency"""
@@ -49,8 +49,8 @@ class SessionPool:
             try:
                 current_size = self.sessions.qsize()
                 
-                # Add debug logging
-                self.logger.debug(f"Factory check - Current pool size: {current_size}, " 
+                # Add info logging
+                self.logger.info(f"Factory check - Current pool size: {current_size}, " 
                                 f"Threshold: {self.refill_threshold}, "
                                 f"Is refilling: {self.is_refilling}")
                 
