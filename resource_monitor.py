@@ -18,7 +18,9 @@ class ResourceMonitor:
             'download_usage_pct': [],
             'connections': [],
             'sent_mbps': [],
-            'recv_mbps': []
+            'recv_mbps': [],
+            'cpu_percent': [],  # Added CPU tracking
+            'memory_percent': []  # Added memory tracking
         }
         
         # Measure initial bandwidth capabilities
@@ -58,6 +60,11 @@ class ResourceMonitor:
         }
 
     def _get_resource_usage(self):
+        # Get CPU and memory usage
+        cpu_percent = psutil.cpu_percent(interval=None)
+        memory = psutil.virtual_memory()
+        memory_percent = memory.percent
+
         # Get detailed connection info
         connections = psutil.net_connections()
         conn_states = {
@@ -133,7 +140,9 @@ class ResourceMonitor:
             'total_connections': len(connections),
             'file_descriptors': fd_count,
             'socket_errors': self._get_socket_errors(),
-            'bandwidth': bandwidth
+            'bandwidth': bandwidth,
+            'cpu_percent': cpu_percent,  # Added CPU usage
+            'memory_percent': memory_percent  # Added memory usage
         }
 
     def _get_socket_errors(self):
@@ -155,6 +164,8 @@ class ResourceMonitor:
         self.stats_history['connections'].append(stats['total_connections'])
         self.stats_history['sent_mbps'].append(stats['bandwidth']['sent_mbps'])
         self.stats_history['recv_mbps'].append(stats['bandwidth']['recv_mbps'])
+        self.stats_history['cpu_percent'].append(stats['cpu_percent'])  # Added CPU tracking
+        self.stats_history['memory_percent'].append(stats['memory_percent'])  # Added memory tracking
 
     def get_statistics_summary(self):
         """Get summary of collected statistics"""
@@ -204,6 +215,10 @@ class ResourceMonitor:
             log_counter += 1
             if log_counter >= (1.0 / self.monitor_interval):
                 log_counter = 0
+                
+                self.logger.info("\n=== System Resource Usage ===")
+                self.logger.info(f"CPU Usage: {stats['cpu_percent']}%")
+                self.logger.info(f"Memory Usage: {stats['memory_percent']}%")
                 
                 self.logger.info("\n=== Network Resource Usage ===")
                 self.logger.info("Connection States:")

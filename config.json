@@ -5,7 +5,7 @@
     "batch_size": 3,
     "concurrent_requests_control": { 
         "initial_concurrent": 50,
-        "scale_up_delay": 0.5,
-        "scale_increment": 20
+        "scale_up_delay": 0.3,
+        "scale_increment": 30
     }
 } 
