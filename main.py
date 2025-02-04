@@ -66,7 +66,7 @@ print(CONFIG)
 resource_monitor = ResourceMonitor()
 
 # After CONFIG loading
-MAX_CONCURRENT_SCRAPERS = CONFIG.get("max_concurrent_zipcode_scrapers", 50)
+MAX_CONCURRENT_SCRAPERS = CONFIG.get("max_concurrent_zipcode_scrapers", 200)
 thread_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SCRAPERS)
 
 @app.post("/scrape", response_model=ScrapeResponse)
