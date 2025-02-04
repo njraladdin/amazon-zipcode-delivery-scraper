@@ -127,8 +127,8 @@ async def scrape_product(request: ScrapeRequest):
             
             def process_batch(batch_zipcodes: List[str]) -> tuple:
                 try:
-                    # Get a session from the pool
-                    scraper = sessions[0]
+                    # Get a session from the list
+                    scraper = sessions.pop(0)  # Remove and get session
                     logger.info(f"Processing zipcodes: {batch_zipcodes}")
                     
                     try:
@@ -136,7 +136,7 @@ async def scrape_product(request: ScrapeRequest):
                         return batch_results, batch_zipcodes
                     finally:
                         # Always return the session to the pool
-                        sessions.pop(0)
+                        session_pool.return_sessions([scraper])
                         
                 except Exception as e:
                     logger.error(f"Error processing batch {batch_zipcodes}: {str(e)}")

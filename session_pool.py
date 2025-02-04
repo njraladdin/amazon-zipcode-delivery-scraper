@@ -14,12 +14,16 @@ class SessionPool:
         self.logger = setup_logger('SessionPool')
         self.config = load_config()
         # Use config values with fallbacks
-        self.min_available_sessions_in_reserve = self.config.get('initial_session_pool_size', 100)
-        self.refill_threshold = self.config.get('session_pool_refill_threshold', self.min_available_sessions_in_reserve // 2)
+        self.min_available_sessions_in_reserve = self.config.get('initial_session_pool_size', 200)  # Use 200 as fallback
+        self.refill_threshold = self.config.get('session_pool_refill_threshold', 100)  # Use 100 as fallback
         self.sessions = Queue()
         self.lock = threading.Lock()
         self.cache_file = Path("cached_sessions.json")
         self.is_refilling = False  # New flag to track refill state
+        
+        # Log the initialization values
+        self.logger.info(f"Initializing SessionPool with: target_size={self.min_available_sessions_in_reserve}, "
+                        f"refill_threshold={self.refill_threshold}")
         
         # Initialize factory thread but don't start it yet
         self.should_run = False
