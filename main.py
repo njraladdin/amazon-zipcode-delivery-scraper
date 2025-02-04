@@ -68,7 +68,7 @@ REFILL_THRESHOLD = CONFIG.get("session_pool_refill_threshold", 100) # start refi
 @app.on_event("startup")
 async def startup_event():
     global session_pool
-    session_pool = SessionPool(min_available_sessions_in_reserve=INITIAL_POOL_SIZE)
+    session_pool = SessionPool()
     session_pool.initialize_pool()
     logger.info(f"Started server with {session_pool.get_pool_size()} pre-initialized sessions")
     session_pool.start_background_factory()

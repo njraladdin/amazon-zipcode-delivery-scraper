@@ -10,12 +10,12 @@ import os
 from pathlib import Path
 
 class SessionPool:
-    def __init__(self, min_available_sessions_in_reserve=100):
+    def __init__(self):
         self.logger = setup_logger('SessionPool')
-        self.min_available_sessions_in_reserve = min_available_sessions_in_reserve
         self.config = load_config()
-        # Use refill threshold from config instead of calculating
-        self.refill_threshold = self.config.get('session_pool_refill_threshold', min_available_sessions_in_reserve // 2)
+        # Use config values with fallbacks
+        self.min_available_sessions_in_reserve = self.config.get('initial_session_pool_size', 100)
+        self.refill_threshold = self.config.get('session_pool_refill_threshold', self.min_available_sessions_in_reserve // 2)
         self.sessions = Queue()
         self.lock = threading.Lock()
         self.cache_file = Path("cached_sessions.json")
@@ -337,8 +337,10 @@ class SessionPool:
 
     def return_sessions(self, sessions):
         """Return multiple sessions to the pool"""
+        self.logger.info(f"Returning {len(sessions)} sessions to pool. Current size: {self.sessions.qsize()}")
         for session in sessions:
             self.sessions.put(session)
+        self.logger.info(f"New pool size after returns: {self.sessions.qsize()}")
 
 def test_session_pool():
     """Test function to simulate session pool behavior"""
