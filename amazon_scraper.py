@@ -110,15 +110,6 @@ class AmazonScraper:
             'viewport-width': '1120'
         }
 
-        # Make initial request to amazon.com
-        # self._log_info("Accessing amazon.com homepage...")
-        # initial_response = self.session.get(initial_url, headers=headers)
-        
-        # if initial_response.status_code != 200:
-        #     self._log_error(f"Homepage request failed with status code: {initial_response.status_code}")
-        #     return None
-
-        # Then make the product page request
         self._log_info("Accessing product page...")
         response = self.session.get(product_url, headers=headers)
         
@@ -126,29 +117,100 @@ class AmazonScraper:
             self._log_error(f"Product page request failed with status code: {response.status_code}")
             return None
 
-        # Debug print for cookies after both requests
-        self._log_info("Current session cookies after initial requests:")
-        for cookie_name, cookie_value in self.session.cookies.get_dict().items():
-            print(f"{Fore.CYAN}[DEBUG] Cookie: {cookie_name} = {cookie_value[:20]}...{Style.RESET_ALL}")
-
-        # Parse the HTML and get CSRF token from modal data
+        # Extract CSRF token using string operations
         self._log_info("Extracting CSRF token...")
-        start_time = time.time()
+        extraction_start = time.time()
+        html = response.text
+        modal_id = 'nav-global-location-data-modal-action'
         
-        soup = BeautifulSoup(response.text, "html.parser")
-        location_modal = soup.find(id="nav-global-location-data-modal-action")
-        if location_modal:
-            data_modal = location_modal.get('data-a-modal')
-            if data_modal:
-                modal_data = json.loads(data_modal)
-                if 'ajaxHeaders' in modal_data and 'anti-csrftoken-a2z' in modal_data['ajaxHeaders']:
-                    csrf_token = modal_data['ajaxHeaders']['anti-csrftoken-a2z']
-                    extraction_time = round(time.time() - start_time, 2)
-                    self._log_success(f"CSRF token extracted in {extraction_time}s: {csrf_token[:10]}...")
-                    return csrf_token
-        
-        extraction_time = round(time.time() - start_time, 2)
-        self._log_error(f"Failed to extract CSRF token after {extraction_time}s")
+        try:
+            # Find the modal element
+            modal_start = html.find(f'id="{modal_id}"')
+            if modal_start == -1:
+                self._log_error(f"Modal element not found (string search)")
+                return None
+                
+            # Find data-a-modal attribute
+            data_modal_start = html.find('data-a-modal=\'', modal_start)  # Note: Using single quote here
+            if data_modal_start == -1:
+                # Try with encoded quotes as fallback
+                data_modal_start = html.find('data-a-modal="{', modal_start)
+                if data_modal_start == -1:
+                    self._log_error("data-a-modal attribute not found (string search)")
+                    return None
+                
+            # Find the start of the JSON content
+            json_start = data_modal_start + len('data-a-modal="')
+            
+            # Find the matching end quote by counting brackets
+            bracket_count = 0
+            in_quotes = False
+            escape_next = False
+            json_end = json_start
+            
+            while json_end < len(html):
+                char = html[json_end]
+                
+                if escape_next:
+                    escape_next = False
+                elif char == '\\':
+                    escape_next = True
+                elif char == '"' and not in_quotes:
+                    if bracket_count == 0:
+                        break
+                    in_quotes = True
+                elif char == '"' and in_quotes:
+                    in_quotes = False
+                elif not in_quotes:
+                    if char == '{':
+                        bracket_count += 1
+                    elif char == '}':
+                        bracket_count -= 1
+                        if bracket_count == 0:
+                            json_end += 1
+                            break
+                
+                json_end += 1
+            
+            if json_end >= len(html):
+                self._log_error("Could not find proper end of JSON data")
+                return None
+                
+            # Extract and parse the JSON
+            json_str = html[json_start:json_end]
+            json_str = json_str.replace('&quot;', '"')  # Handle HTML entities
+            
+            modal_data = json.loads(json_str)
+            
+            if 'ajaxHeaders' in modal_data and 'anti-csrftoken-a2z' in modal_data['ajaxHeaders']:
+                csrf_token = modal_data['ajaxHeaders']['anti-csrftoken-a2z']
+                extraction_time = round((time.time() - extraction_start) * 1000, 2)  # Convert to milliseconds
+                self._log_success(f"CSRF token extracted in {extraction_time}ms: {csrf_token[:10]}...")
+                return csrf_token
+            
+            self._log_error("CSRF token not found in modal data")
+            return None
+            
+        except json.JSONDecodeError as e:
+            self._log_error(f"Failed to parse modal JSON data: {str(e)}")
+            return None
+        except Exception as e:
+            self._log_error(f"Error extracting CSRF token: {str(e)}")
+            return None
+
+    def _extract_csrf_token_fallback(self, html):
+        """Fallback method using BeautifulSoup if fast extraction fails"""
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            location_modal = soup.find(id="nav-global-location-data-modal-action")
+            if location_modal:
+                data_modal = location_modal.get('data-a-modal')
+                if data_modal:
+                    modal_data = json.loads(data_modal)
+                    if 'ajaxHeaders' in modal_data and 'anti-csrftoken-a2z' in modal_data['ajaxHeaders']:
+                        return modal_data['ajaxHeaders']['anti-csrftoken-a2z']
+        except Exception as e:
+            self._log_error(f"Fallback extraction failed: {str(e)}")
         return None
 
     def _make_modal_html_request(self, csrf_token):
@@ -453,6 +515,7 @@ class AmazonScraper:
             start_time = time.time()
             self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
             
+            # Initialize final data object
             final_data = {
                 "asin": asin,
                 "zip_code": zipcode,
@@ -462,44 +525,50 @@ class AmazonScraper:
                     "total_offers": 0,
                     "prime_eligible_offers": 0,
                     "collection_time_seconds": 0,
-                    "step_timings": {}
+                    "step_timings": {}  # Add this to store step timings
                 }
             }
-
-            # Create threads for parallel requests
-            all_offers_start = time.time()
-            all_offers_html = [None]  # Use list to store result from thread
-            prime_offers_html = [None]
-
-            def get_all_offers():
-                all_offers_html[0] = self._get_offers_page(asin, csrf_token)
-
-            def get_prime_offers():
-                prime_offers_html[0] = self._get_offers_page(asin, csrf_token, prime_only=True)
-
-            t1 = threading.Thread(target=get_all_offers)
-            t2 = threading.Thread(target=get_prime_offers)
             
-            t1.start()
-            t2.start()
-            t1.join()
-            t2.join()
+            # Get and parse offers pages
+            self._log_info("Parsing offers pages...")
+            
+            all_offers_start = time.time()
+            all_offers_html = self._get_offers_page(asin, csrf_token)
+            timings['all_offers_request'] = round(time.time() - all_offers_start, 2)
+            
+            try:
+                # Time the all offers parsing
+                parse_start = time.time()
+                offers_json, has_prime_filter = parse_offers(all_offers_html)
+                all_offers_data = json.loads(offers_json)
+                timings['all_offers_parsing'] = round(time.time() - parse_start, 2)
+                
+                self._log_success(f"All offers page parsed successfully - Found {len(all_offers_data)} offers")
+                self._log_info(f"Prime filter available: {has_prime_filter}")
+                
+                prime_offers_data = []
+                # Only make Prime-only request if Prime filter exists
+                if has_prime_filter:
+                    # Time the prime offers request and parsing
+                    prime_start = time.time()
+                    prime_offers_html = self._get_offers_page(asin, csrf_token, prime_only=True)
+                    timings['prime_offers_request'] = round(time.time() - prime_start, 2)
+                    
+                    try:
+                        prime_parse_start = time.time()
+                        prime_offers_json, _ = parse_offers(prime_offers_html)
+                        prime_offers_data = json.loads(prime_offers_json)
+                        timings['prime_offers_parsing'] = round(time.time() - prime_parse_start, 2)
+                        
+                        self._log_success(f"Prime offers page parsed successfully - Found {len(prime_offers_data)} Prime eligible offers")
+                    except Exception as e:
+                        self._log_error(f"Failed to parse Prime offers page: {str(e)}")
+                else:
+                    self._log_info("No Prime filter available - skipping Prime-only request")
 
-            timings['offers_requests'] = round(time.time() - all_offers_start, 2)
-
-            # Parse the results
-            parse_start = time.time()
-            offers_json, has_prime_filter = parse_offers(all_offers_html[0])
-            all_offers_data = json.loads(offers_json)
-            timings['all_offers_parsing'] = round(time.time() - parse_start, 2)
-
-            prime_offers_data = []
-            # Only use prime offers if prime filter exists
-            if has_prime_filter:
-                prime_parse_start = time.time()
-                prime_offers_json, _ = parse_offers(prime_offers_html[0])
-                prime_offers_data = json.loads(prime_offers_json)
-                timings['prime_offers_parsing'] = round(time.time() - prime_parse_start, 2)
+            except Exception as e:
+                self._log_error(f"Failed to parse all offers page: {str(e)}")
+                return None
 
             # Time the offer merging process
             merge_start = time.time()
