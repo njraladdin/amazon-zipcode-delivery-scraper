@@ -126,15 +126,15 @@ async def scrape_product(request: ScrapeRequest):
                 download_usage = stats.get('download_usage_pct', {}).get('current', 0)
                 cpu_usage = stats.get('cpu_percent', {}).get('current', 0)
                 
-                # More aggressive CPU threshold (50% instead of 70%)
-                if download_usage < 80 and cpu_usage < 50:  
+                # More aggressive CPU threshold (85% instead of 50%)
+                if download_usage < 80 and cpu_usage < 85:  
                     current_concurrent += 1
                     last_scale_up = current_time
                     logger.info(f"Scaling up to {current_concurrent} concurrent requests "
                               f"(download: {download_usage:.1f}%, CPU: {cpu_usage:.1f}%)")
-                elif cpu_usage >= 50:
-                    # Scale down more aggressively when CPU is high
-                    current_concurrent = max(1, current_concurrent - 2)  # Scale down by 2
+                elif cpu_usage >= 85:
+                    # Only scale down by 1 to be less reactive
+                    current_concurrent = max(1, current_concurrent - 1)
                     logger.warning(f"Scaling down to {current_concurrent} due to high CPU "
                                  f"usage ({cpu_usage:.1f}%)")
 
