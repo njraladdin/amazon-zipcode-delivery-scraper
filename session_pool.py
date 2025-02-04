@@ -1,4 +1,4 @@
-from queue import Queue
+from queue import Queue, Empty
 import threading
 from amazon_scraper import AmazonScraper
 from logger import setup_logger
@@ -10,14 +10,96 @@ import os
 from pathlib import Path
 
 class SessionPool:
-    def __init__(self, pool_size=30):
+    def __init__(self, min_available_sessions_in_reserve=100):
         self.logger = setup_logger('SessionPool')
-        self.pool_size = pool_size
+        self.min_available_sessions_in_reserve = min_available_sessions_in_reserve
+        self.config = load_config()
+        # Use refill threshold from config instead of calculating
+        self.refill_threshold = self.config.get('session_pool_refill_threshold', min_available_sessions_in_reserve // 2)
         self.sessions = Queue()
         self.lock = threading.Lock()
-        self.config = load_config()
         self.cache_file = Path("cached_sessions.json")
+        self.is_refilling = False  # New flag to track refill state
         
+        # Initialize factory thread but don't start it yet
+        self.should_run = False
+        self.factory_thread = None
+        
+    def start_background_factory(self):
+        """Start the background factory thread if needed"""
+        with self.lock:  # Add thread safety
+            if not self.factory_thread or not self.factory_thread.is_alive():
+                self.should_run = True
+                self.factory_thread = threading.Thread(target=self._session_factory_worker, daemon=True)
+                self.factory_thread.start()
+                self.logger.info("Started background session factory")
+            else:
+                self.logger.debug("Factory thread already running")
+        
+    def _session_factory_worker(self):
+        """Background worker that maintains minimum session count with limited concurrency"""
+        FACTORY_MAX_CONCURRENT = 10  # Limited concurrent session creations
+        FACTORY_CHECK_INTERVAL = 5   # Seconds between checks
+        
+        while self.should_run:
+            try:
+                current_size = self.sessions.qsize()
+                
+                # Add debug logging
+                self.logger.debug(f"Factory check - Current pool size: {current_size}, " 
+                                f"Threshold: {self.refill_threshold}, "
+                                f"Is refilling: {self.is_refilling}")
+                
+                # Start refilling if below threshold or continue if already refilling
+                if current_size < self.refill_threshold or self.is_refilling:
+                    self.is_refilling = True
+                    sessions_needed = self.min_available_sessions_in_reserve - current_size
+                    
+                    self.logger.info(f"Checking refill conditions: current_size={current_size}, "
+                                   f"refill_threshold={self.refill_threshold}, "
+                                   f"min_reserve={self.min_available_sessions_in_reserve}, "
+                                   f"sessions_needed={sessions_needed}")
+                    
+                    if sessions_needed <= 0:
+                        # We've reached the full reserve size
+                        self.is_refilling = False
+                        self.logger.info("Factory reached target pool size, pausing refill")
+                        time.sleep(FACTORY_CHECK_INTERVAL)
+                        continue
+                        
+                    self.logger.info(f"Factory starting to create {sessions_needed} new sessions. "
+                                   f"Current pool size: {current_size}")
+                    
+                    # Create sessions with limited concurrency
+                    with ThreadPoolExecutor(max_workers=FACTORY_MAX_CONCURRENT) as executor:
+                        batch_size = min(FACTORY_MAX_CONCURRENT, sessions_needed)
+                        self.logger.info(f"Creating batch of {batch_size} sessions")
+                        
+                        futures = [executor.submit(self._initialize_single_session, i) 
+                                 for i in range(batch_size)]
+                        
+                        successful = 0
+                        for future in futures:
+                            try:
+                                if future.result():
+                                    successful += 1
+                            except Exception as e:
+                                self.logger.error(f"Factory failed to create session: {str(e)}")
+                        
+                        self.logger.info(f"Batch complete - Created {successful}/{batch_size} sessions")
+                
+                time.sleep(FACTORY_CHECK_INTERVAL)
+                
+            except Exception as e:
+                self.logger.error(f"Error in session factory: {str(e)}")
+                time.sleep(FACTORY_CHECK_INTERVAL * 2)  # Double interval on error
+    
+    def shutdown(self):
+        """Cleanup method to stop the factory thread"""
+        self.should_run = False
+        if self.factory_thread:
+            self.factory_thread.join()
+    
     def _save_sessions_to_cache(self):
         """Save session data to cache file"""
         try:
@@ -89,7 +171,7 @@ class SessionPool:
             with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
                 # Submit all cached sessions for loading
                 futures = []
-                for data in session_data[:self.pool_size]:
+                for data in session_data[:self.min_available_sessions_in_reserve]:
                     futures.append(executor.submit(load_single_session, data))
                 
                 # Process results as they complete
@@ -115,7 +197,7 @@ class SessionPool:
         
         # Try to load from cache first
         if self._load_sessions_from_cache():
-            remaining = self.pool_size - self.sessions.qsize()
+            remaining = self.min_available_sessions_in_reserve - self.sessions.qsize()
             cache_time = time.time() - start_time
             self.logger.info(f"Cache loading took {cache_time:.2f} seconds")
             
@@ -123,10 +205,10 @@ class SessionPool:
                 self.logger.info(f"Pool fully initialized from cache in {cache_time:.2f} seconds")
                 return
             self.logger.info(f"Initializing remaining {remaining} sessions...")
-            self.pool_size = remaining
+            self.min_available_sessions_in_reserve = remaining
             start_time = time.time()  # Reset timer for remaining sessions
         else:
-            self.logger.info(f"Initializing fresh pool with {self.pool_size} sessions...")
+            self.logger.info(f"Initializing fresh pool with {self.min_available_sessions_in_reserve} sessions...")
         
         max_concurrent = self.config.get('max_concurrent_zipcode_scrapers', 40)
         self.logger.info(f"Using max concurrent initializations: {max_concurrent}")
@@ -134,7 +216,7 @@ class SessionPool:
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
             # Submit all initialization tasks
             futures = []
-            for i in range(self.pool_size):
+            for i in range(self.min_available_sessions_in_reserve):
                 future = executor.submit(self._initialize_single_session, i)
                 futures.append(future)
             
@@ -153,14 +235,14 @@ class SessionPool:
                 
                 # Log progress
                 total = completed + failed
-                self.logger.info(f"Progress: {total}/{self.pool_size} "
+                self.logger.info(f"Progress: {total}/{self.min_available_sessions_in_reserve} "
                                f"(Success: {completed}, Failed: {failed})")
         
         init_time = time.time() - start_time
         total_time = time.time() - start_time
         self.logger.info(
             f"Pool initialization completed in {total_time:.2f} seconds. "
-            f"Successfully initialized {self.sessions.qsize()}/{self.pool_size} sessions "
+            f"Successfully initialized {self.sessions.qsize()}/{self.min_available_sessions_in_reserve} sessions "
             f"({completed} successful, {failed} failed)"
         )
         
@@ -171,19 +253,33 @@ class SessionPool:
         self.logger.info(f"Session caching took {cache_time:.2f} seconds")
     
     def _initialize_single_session(self, index):
-        """Initialize a single session"""
-        try:
-            scraper = AmazonScraper()
-            if scraper.initialize_session():
-                self.sessions.put(scraper)
-                self.logger.info(f"Successfully initialized session {index + 1}")
-                return True
-            else:
-                self.logger.error(f"Failed to initialize session {index + 1}")
-                return False
-        except Exception as e:
-            self.logger.error(f"Error initializing session {index + 1}: {str(e)}")
-            return False
+        """Initialize a single session with retry mechanism"""
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                scraper = AmazonScraper()
+                if scraper.initialize_session():
+                    self.sessions.put(scraper)
+                    self.logger.info(f"Successfully initialized session {index + 1} on attempt {retry_count + 1}")
+                    return True
+                else:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        self.logger.warning(f"Failed to initialize session {index + 1}, attempt {retry_count}/{max_retries}. Retrying...")
+                    else:
+                        self.logger.error(f"Failed to initialize session {index + 1} after {max_retries} attempts")
+                        return False
+            except Exception as e:
+                retry_count += 1
+                if retry_count < max_retries:
+                    self.logger.warning(f"Error initializing session {index + 1} on attempt {retry_count}/{max_retries}: {str(e)}. Retrying...")
+                else:
+                    self.logger.error(f"Error initializing session {index + 1} after {max_retries} attempts: {str(e)}")
+                    return False
+        
+        return False
     
     def get_session(self):
         """Get a session from the pool"""
@@ -195,4 +291,94 @@ class SessionPool:
     
     def get_pool_size(self):
         """Get current number of available sessions"""
-        return self.sessions.qsize() 
+        return self.sessions.qsize()
+
+    def wait_for_sessions(self, needed_sessions, timeout=300):
+        """Wait until enough sessions are available"""
+        start_time = time.time()
+        check_interval = 0.5  # Check every 0.5 seconds
+        
+        while (time.time() - start_time) < timeout:
+            current_size = self.sessions.qsize()
+            if current_size >= needed_sessions:
+                return True
+            
+            self.logger.info(f"Waiting for sessions... Need {needed_sessions}, have {current_size}")
+            time.sleep(check_interval)
+            
+        self.logger.error(f"Timeout waiting for {needed_sessions} sessions after {timeout} seconds")
+        return False
+
+    def get_sessions(self, count, timeout=300):
+        """Get multiple sessions, waiting if necessary"""
+        if not self.wait_for_sessions(count, timeout):
+            raise Exception(f"Could not get {count} sessions within {timeout} seconds")
+            
+        sessions = []
+        try:
+            current_size = self.sessions.qsize()
+            self.logger.info(f"Getting {count} sessions. Current pool size: {current_size}")
+            
+            for _ in range(count):
+                sessions.append(self.sessions.get(timeout=timeout))
+            
+            new_size = self.sessions.qsize()
+            if new_size < self.refill_threshold:
+                self.logger.info(f"Pool size ({new_size}) fell below refill threshold ({self.refill_threshold}). "
+                               f"Starting background factory.")
+                self.start_background_factory()
+            
+            return sessions
+        except Empty:
+            # If we somehow couldn't get all sessions, return the ones we got
+            for session in sessions:
+                self.sessions.put(session)
+            raise Exception(f"Could not get {count} sessions, timeout occurred")
+
+    def return_sessions(self, sessions):
+        """Return multiple sessions to the pool"""
+        for session in sessions:
+            self.sessions.put(session)
+
+def test_session_pool():
+    """Test function to simulate session pool behavior"""
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    
+    pool = SessionPool(min_available_sessions_in_reserve=50)
+    pool.initialize_pool()
+    
+    print("\n=== Initial State ===")
+    print(f"Pool size: {pool.get_pool_size()}")
+    print(f"Refill threshold: {pool.refill_threshold}")
+    
+    try:
+        # Get 40 sessions but don't return them right away
+        print("\n=== Getting 40 sessions ===")
+        sessions = pool.get_sessions(40)
+        print(f"Successfully got {len(sessions)} sessions")
+        print(f"Pool size after getting sessions: {pool.get_pool_size()}")
+        
+        # Wait to observe factory behavior
+        print("\n=== Waiting to observe factory behavior ===")
+        for i in range(6):
+            time.sleep(5)
+            print(f"Current pool size: {pool.get_pool_size()}")
+        
+        # Now return the sessions
+        print("\n=== Returning sessions ===")
+        pool.return_sessions(sessions)
+        print(f"Pool size after returning: {pool.get_pool_size()}")
+        
+        # Wait for final observation
+        print("\n=== Final observation period ===")
+        for i in range(4):
+            time.sleep(5)
+            print(f"Current pool size: {pool.get_pool_size()}")
+            
+    finally:
+        pool.shutdown()
+        print("\n=== Test completed ===")
+
+if __name__ == "__main__":
+    test_session_pool() 
