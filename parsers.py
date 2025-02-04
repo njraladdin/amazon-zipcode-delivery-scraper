@@ -1,4 +1,4 @@
-from bs4 import BeautifulSoup
+from lxml import html
 import json
 from datetime import datetime, timedelta
 import re
@@ -12,23 +12,23 @@ def parse_offers(html_text):
             - offers_json is the JSON string of parsed offers
             - has_prime_filter is a boolean indicating if Prime filter is available
     """
-    soup = BeautifulSoup(html_text, 'html.parser')
+    tree = html.fromstring(html_text)
     offers = []
 
     # Check if Prime filter exists
-    filter_list = soup.find('div', id='aod-filter-list')
+    filter_list = tree.xpath('//div[@id="aod-filter-list"]')
     has_prime_filter = False
     if filter_list:
-        prime_checkbox = filter_list.find('i', {'class': 'a-icon-prime', 'role': 'img'})
-        has_prime_filter = prime_checkbox is not None
+        prime_checkbox = tree.xpath('.//i[@class="a-icon-prime" and @role="img"]')
+        has_prime_filter = len(prime_checkbox) > 0
 
     # Find the pinned offer first (if present)
-    pinned_offer_div = soup.find('div', id='aod-pinned-offer')
-    if pinned_offer_div:
-        offers.append(extract_offer_data(pinned_offer_div, True))
+    pinned_offer = tree.xpath('//div[@id="aod-pinned-offer"]')
+    if pinned_offer:
+        offers.append(extract_offer_data(pinned_offer[0], True))
 
     # Find all offer divs
-    offer_divs = soup.find_all('div', id='aod-offer')
+    offer_divs = tree.xpath('//div[@id="aod-offer"]')
     for offer_div in offer_divs:
         offers.append(extract_offer_data(offer_div, False))
 
@@ -83,64 +83,56 @@ def parse_delivery_days(delivery_estimate):
 
 def extract_offer_data(offer_div, is_pinned):
     """
-    Extracts offer data from a single offer div.
+    Extracts offer data from a single offer div using lxml.
     """
     offer_data = {
         'seller_id': None,
         'buy_box_winner': is_pinned,
-        'prime': False,  # Renamed from prime_eligible
+        'prime': False,
         'earliest_days': None,
         'latest_days': None,
-        # 'debug': {
-        #     'full_offer_text': offer_div.get_text(separator=' ', strip=True),
-        #      'offer_html': str(offer_div)
-        # }
     }
 
     # Price components
-    price_span = offer_div.find('span', class_='a-price')
+    price_span = offer_div.xpath('.//span[contains(@class, "a-price")]')
     if price_span:
-        whole = price_span.find('span', class_='a-price-whole')
-        fraction = price_span.find('span', class_='a-price-fraction')
+        whole = price_span[0].xpath('.//span[@class="a-price-whole"]/text()')
+        fraction = price_span[0].xpath('.//span[@class="a-price-fraction"]/text()')
         if whole and fraction:
-            price_str = whole.text.strip() + fraction.text.strip()
-            # Remove any non-numeric characters except decimal point
+            price_str = whole[0].strip() + fraction[0].strip()
             price_str = re.sub(r'[^\d.]', '', price_str)
-            offer_data['price'] = float(price_str)  # Renamed from item_price
-            offer_data['total_price'] = offer_data['price']  # Will add shipping cost later
+            offer_data['price'] = float(price_str)
+            offer_data['total_price'] = offer_data['price']
 
     # Delivery information
-    delivery_promise = offer_div.find('div', class_='aod-delivery-promise')
+    delivery_promise = offer_div.xpath('.//div[contains(@class, "aod-delivery-promise")]')
     if delivery_promise:
-        primary_delivery = delivery_promise.find('span', {'data-csa-c-content-id': 'DEXUnifiedCXPDM'})
+        primary_delivery = delivery_promise[0].xpath('.//span[@data-csa-c-content-id="DEXUnifiedCXPDM"]')
         if primary_delivery:
-            shipping_cost = primary_delivery.get('data-csa-c-delivery-price')
-            # Convert shipping cost to float, FREE becomes 0.0
+            shipping_cost = primary_delivery[0].get('data-csa-c-delivery-price')
             if shipping_cost == 'FREE':
                 offer_data['shipping_cost'] = 0.0
             else:
-                # Remove currency symbol and convert to float
                 shipping_cost = re.sub(r'[^\d.]', '', shipping_cost)
                 offer_data['shipping_cost'] = float(shipping_cost) if shipping_cost else 0.0
             
-            # Calculate total price including shipping
             offer_data['total_price'] = offer_data['price'] + offer_data['shipping_cost']
 
-            delivery_time = primary_delivery.find('span', class_="a-text-bold")
+            delivery_time = primary_delivery[0].xpath('.//span[@class="a-text-bold"]')
             if delivery_time:
-                delivery_text = delivery_time.text.strip()
+                delivery_text = delivery_time[0].text.strip()
                 offer_data['delivery_estimate'] = delivery_text
                 earliest, latest = parse_delivery_days(delivery_text)
                 offer_data['earliest_days'] = earliest
                 offer_data['latest_days'] = latest
 
     # Seller information
-    sold_by_div = offer_div.find('div', id='aod-offer-soldBy')
+    sold_by_div = offer_div.xpath('.//div[@id="aod-offer-soldBy"]')
     if sold_by_div:
-        seller_link = sold_by_div.find('a', class_='a-size-small a-link-normal')
+        seller_link = sold_by_div[0].xpath('.//a[@class="a-size-small a-link-normal"]')
         if seller_link:
-            offer_data['seller_name'] = seller_link.text.strip()
-            seller_url = seller_link.get('href')
+            offer_data['seller_name'] = seller_link[0].text.strip()
+            seller_url = seller_link[0].get('href')
             offer_data['seller_id'] = extract_seller_id(seller_url)
 
     return offer_data
