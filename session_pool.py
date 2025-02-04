@@ -38,7 +38,7 @@ class SessionPool:
         
     def _session_factory_worker(self):
         """Background worker that maintains minimum session count with limited concurrency"""
-        FACTORY_MAX_CONCURRENT = 10  # Limited concurrent session creations
+        FACTORY_MAX_CONCURRENT = 10  # Limited concurrent session creations. TODO : make this dynamic, if the reserve is too low then increase concurrency limit 
         FACTORY_CHECK_INTERVAL = 5   # Seconds between checks
         
         while self.should_run:
