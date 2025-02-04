@@ -133,6 +133,8 @@ class AmazonScraper:
 
         # Parse the HTML and get CSRF token from modal data
         self._log_info("Extracting CSRF token...")
+        start_time = time.time()
+        
         soup = BeautifulSoup(response.text, "html.parser")
         location_modal = soup.find(id="nav-global-location-data-modal-action")
         if location_modal:
@@ -141,10 +143,12 @@ class AmazonScraper:
                 modal_data = json.loads(data_modal)
                 if 'ajaxHeaders' in modal_data and 'anti-csrftoken-a2z' in modal_data['ajaxHeaders']:
                     csrf_token = modal_data['ajaxHeaders']['anti-csrftoken-a2z']
-                    self._log_success(f"CSRF token extracted: {csrf_token[:10]}...")
+                    extraction_time = round(time.time() - start_time, 2)
+                    self._log_success(f"CSRF token extracted in {extraction_time}s: {csrf_token[:10]}...")
                     return csrf_token
         
-        self._log_error("Failed to extract CSRF token")
+        extraction_time = round(time.time() - start_time, 2)
+        self._log_error(f"Failed to extract CSRF token after {extraction_time}s")
         return None
 
     def _make_modal_html_request(self, csrf_token):
