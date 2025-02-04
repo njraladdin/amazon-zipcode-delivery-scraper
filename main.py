@@ -146,7 +146,9 @@ async def scrape_product(request: ScrapeRequest):
                 
                 # More aggressive CPU threshold (85% instead of 50%)
                 if download_usage < 80 and cpu_usage < 85:  
-                    current_concurrent += 1
+                    # Use scale_increment instead of incrementing by 1
+                    current_concurrent = min(max_concurrent, 
+                                          current_concurrent + scale_increment)
                     last_scale_up = current_time
                     logger.info(f"Scaling up to {current_concurrent} concurrent requests "
                               f"(download: {download_usage:.1f}%, CPU: {cpu_usage:.1f}%)")
