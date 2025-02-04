@@ -122,11 +122,21 @@ async def scrape_product(request: ScrapeRequest):
             # Simple scaling check
             if (current_time - last_scale_up > scale_up_delay and 
                 current_concurrent < max_concurrent):
-                usage = resource_monitor.get_statistics_summary().get('download_usage_pct', {}).get('current', 0)
-                if usage < 80:  # Hardcoded threshold
-                    current_concurrent = min(current_concurrent + scale_increment, max_concurrent)
+                stats = resource_monitor.get_statistics_summary()
+                download_usage = stats.get('download_usage_pct', {}).get('current', 0)
+                cpu_usage = stats.get('cpu_percent', {}).get('current', 0)
+                
+                # Scale up only if both CPU and network are under thresholds
+                if download_usage < 80 and cpu_usage < 70:  # Conservative CPU threshold
+                    current_concurrent += 1  # Add just one at a time
                     last_scale_up = current_time
-                    logger.info(f"Scaling up to {current_concurrent} concurrent requests (usage: {usage:.1f}%)")
+                    logger.info(f"Scaling up to {current_concurrent} concurrent requests "
+                              f"(download: {download_usage:.1f}%, CPU: {cpu_usage:.1f}%)")
+                elif cpu_usage >= 70:
+                    # Scale down if CPU is too high
+                    current_concurrent = max(1, current_concurrent - 1)
+                    logger.warning(f"Scaling down to {current_concurrent} due to high CPU "
+                                 f"usage ({cpu_usage:.1f}%)")
 
             # Submit new batches if we have capacity
             while (batch_index < len(zipcode_batches) and 
