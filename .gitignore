@@ -12,3 +12,4 @@ logs/
 *.log
 
 bandwidth_cache.json
+cached_sessions.json

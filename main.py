@@ -39,7 +39,7 @@ session_pool = None
 @app.on_event("startup")
 async def startup_event():
     global session_pool
-    session_pool = SessionPool(pool_size=100)
+    session_pool = SessionPool(pool_size=20)
     session_pool.initialize_pool()
     logger.info(f"Started server with {session_pool.get_pool_size()} pre-initialized sessions")
 
