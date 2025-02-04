@@ -38,6 +38,8 @@ reach 25 seconds:
 - don't start all concurrent tassks at once, but incrementally, done 
 - udpate config for best result (incremental scale up control, batch size), done 
 
+
+- do the offers requests (prime and all) in parallel
 -pre-initialize pool of ready to use amazon sessions, where we just have to change proxy and go to product page 
 
 

@@ -449,7 +449,6 @@ class AmazonScraper:
             start_time = time.time()
             self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
             
-            # Initialize final data object
             final_data = {
                 "asin": asin,
                 "zip_code": zipcode,
@@ -459,50 +458,44 @@ class AmazonScraper:
                     "total_offers": 0,
                     "prime_eligible_offers": 0,
                     "collection_time_seconds": 0,
-                    "step_timings": {}  # Add this to store step timings
+                    "step_timings": {}
                 }
             }
-            
-            # Get and parse offers pages
-            self._log_info("Parsing offers pages...")
-            
-            all_offers_start = time.time()
-            all_offers_html = self._get_offers_page(asin, csrf_token)
-            timings['all_offers_request'] = round(time.time() - all_offers_start, 2)
-            
-            try:
-                # Time the all offers parsing
-                parse_start = time.time()
-                offers_json, has_prime_filter = parse_offers(all_offers_html)
-                all_offers_data = json.loads(offers_json)
-                timings['all_offers_parsing'] = round(time.time() - parse_start, 2)
-                
-                self._log_success(f"All offers page parsed successfully - Found {len(all_offers_data)} offers")
-                self._log_info(f"Prime filter available: {has_prime_filter}")
-                
-                prime_offers_data = []
-                # Only make Prime-only request if Prime filter exists
-                if has_prime_filter:
-                    # Time the prime offers request and parsing
-                    prime_start = time.time()
-                    prime_offers_html = self._get_offers_page(asin, csrf_token, prime_only=True)
-                    timings['prime_offers_request'] = round(time.time() - prime_start, 2)
-                    
-                    try:
-                        prime_parse_start = time.time()
-                        prime_offers_json, _ = parse_offers(prime_offers_html)
-                        prime_offers_data = json.loads(prime_offers_json)
-                        timings['prime_offers_parsing'] = round(time.time() - prime_parse_start, 2)
-                        
-                        self._log_success(f"Prime offers page parsed successfully - Found {len(prime_offers_data)} Prime eligible offers")
-                    except Exception as e:
-                        self._log_error(f"Failed to parse Prime offers page: {str(e)}")
-                else:
-                    self._log_info("No Prime filter available - skipping Prime-only request")
 
-            except Exception as e:
-                self._log_error(f"Failed to parse all offers page: {str(e)}")
-                return None
+            # Create threads for parallel requests
+            all_offers_start = time.time()
+            all_offers_html = [None]  # Use list to store result from thread
+            prime_offers_html = [None]
+
+            def get_all_offers():
+                all_offers_html[0] = self._get_offers_page(asin, csrf_token)
+
+            def get_prime_offers():
+                prime_offers_html[0] = self._get_offers_page(asin, csrf_token, prime_only=True)
+
+            t1 = threading.Thread(target=get_all_offers)
+            t2 = threading.Thread(target=get_prime_offers)
+            
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+            timings['offers_requests'] = round(time.time() - all_offers_start, 2)
+
+            # Parse the results
+            parse_start = time.time()
+            offers_json, has_prime_filter = parse_offers(all_offers_html[0])
+            all_offers_data = json.loads(offers_json)
+            timings['all_offers_parsing'] = round(time.time() - parse_start, 2)
+
+            prime_offers_data = []
+            # Only use prime offers if prime filter exists
+            if has_prime_filter:
+                prime_parse_start = time.time()
+                prime_offers_json, _ = parse_offers(prime_offers_html[0])
+                prime_offers_data = json.loads(prime_offers_json)
+                timings['prime_offers_parsing'] = round(time.time() - prime_parse_start, 2)
 
             # Time the offer merging process
             merge_start = time.time()
