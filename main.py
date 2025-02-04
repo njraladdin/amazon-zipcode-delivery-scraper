@@ -14,6 +14,7 @@ from resource_monitor import ResourceMonitor
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
+from session_pool import SessionPool
 
 # Load default zipcodes from JSON file
 def load_default_zipcodes():
@@ -31,6 +32,16 @@ DEFAULT_ZIPCODES = load_default_zipcodes()
 
 # Create FastAPI app
 app = FastAPI()
+
+# Initialize session pool
+session_pool = None
+
+@app.on_event("startup")
+async def startup_event():
+    global session_pool
+    session_pool = SessionPool(pool_size=100)
+    session_pool.initialize_pool()
+    logger.info(f"Started server with {session_pool.get_pool_size()} pre-initialized sessions")
 
 # Define request and response models
 class ScrapeRequest(BaseModel):
@@ -55,7 +66,7 @@ print(CONFIG)
 resource_monitor = ResourceMonitor()
 
 # After CONFIG loading
-MAX_CONCURRENT_SCRAPERS = CONFIG.get("max_concurrent_zipcode_scrapers", 10)
+MAX_CONCURRENT_SCRAPERS = CONFIG.get("max_concurrent_zipcode_scrapers", 50)
 thread_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SCRAPERS)
 
 @app.post("/scrape", response_model=ScrapeResponse)
@@ -70,10 +81,17 @@ async def scrape_product(request: ScrapeRequest):
 
         def process_batch(batch_zipcodes: List[str]) -> tuple:
             try:
-                scraper = AmazonScraper()
+                # Get a session from the pool
+                scraper = session_pool.get_session()
                 logger.info(f"Processing zipcodes: {batch_zipcodes}")
-                batch_results = scraper.process_multiple_zipcodes(request.asin, batch_zipcodes)
-                return batch_results, batch_zipcodes
+                
+                try:
+                    batch_results = scraper.process_multiple_zipcodes(request.asin, batch_zipcodes)
+                    return batch_results, batch_zipcodes
+                finally:
+                    # Always return the session to the pool
+                    session_pool.return_session(scraper)
+                    
             except Exception as e:
                 logger.error(f"Error processing batch {batch_zipcodes}: {str(e)}")
                 return None, batch_zipcodes

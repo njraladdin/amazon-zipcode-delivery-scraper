@@ -25,6 +25,7 @@ from datetime import datetime
 from logger import setup_logger
 from utils import load_config
 import asyncio
+from queue import Queue
 
 # Configuration constants
 SAVE_OUTPUT = False  # Set to True to save files to output folder
@@ -59,9 +60,9 @@ class AmazonScraper:
         if SAVE_OUTPUT:
             os.makedirs(self.output_dir, exist_ok=True)
 
-        self.is_initialized = False
+        self.session = None
         self.initial_csrf_token = None
-        self.session = None  # Will be created when needed
+        self.is_initialized = False
 
     def _log_info(self, message):
         self.logger.info(message)
@@ -335,20 +336,22 @@ class AmazonScraper:
         except Exception as e:
             self._log_error(f"Failed to save data to {filename}: {str(e)}")
 
-    def _initialize_session(self, asin):
-        """Initialize session with initial cookies and CSRF token"""
-        if self.is_initialized:
-            return
-        
-        self._log_info("Initializing session...")
-        self._create_fresh_session()
-        self.initial_csrf_token = self._make_initial_product_page_request(asin)
-        
-        if not self.initial_csrf_token:
-            raise Exception("Failed to get initial CSRF token")
-        
-        self.is_initialized = True
-        self._log_success("Session initialized successfully")
+    def initialize_session(self, test_asin="B09X7CRKRZ"):
+        """Initialize a fresh session with cookies and return success status"""
+        try:
+            self._create_fresh_session()
+            self.initial_csrf_token = self._make_initial_product_page_request(test_asin)
+            
+            if not self.initial_csrf_token:
+                self._log_error("Failed to get initial CSRF token")
+                return False
+            
+            self.is_initialized = True
+            self._log_success("Session initialized successfully")
+            return True
+        except Exception as e:
+            self._log_error(f"Session initialization failed: {str(e)}")
+            return False
 
     def process_multiple_zipcodes(self, asin: str, zipcodes: List[str]) -> List[Dict[str, Any]]:
         """Process multiple zipcodes using the same session"""
@@ -359,14 +362,19 @@ class AmazonScraper:
             'zipcodes_processing': []  # Will store timing for each zipcode
         }
         
-        # Do initial session setup once
+        # Since we're using pre-initialized sessions, we just need to get CSRF token for this ASIN
         init_start = time.time()
         try:
-            self._initialize_session(asin)
+            # Just get CSRF token for the new product page
+            self.initial_csrf_token = self._make_initial_product_page_request(asin)
+            if not self.initial_csrf_token:
+                self._log_error("Failed to get CSRF token for new product")
+                return results
+            
             timings['session_initialization'] = round(time.time() - init_start, 2)
-            self._log_info(f"\nSession initialization took: {timings['session_initialization']} seconds")
+            self._log_info(f"\nProduct page initialization took: {timings['session_initialization']} seconds")
         except Exception as e:
-            self._log_error(f"Session initialization failed: {str(e)}")
+            self._log_error(f"Product page initialization failed: {str(e)}")
             return results
         
         # Process each zipcode sequentially with the initialized session
