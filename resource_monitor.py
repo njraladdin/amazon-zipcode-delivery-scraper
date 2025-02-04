@@ -79,11 +79,14 @@ class ResourceMonitor:
         except AttributeError:
             fd_count = len(psutil.Process().open_files()) + len(connections)  # Windows alternative
         
-        # Add bandwidth monitoring
+        # Get bandwidth monitoring with 1-second aggregation
         net_io = psutil.net_io_counters()
+        current_time = time.time()
+        
         if not hasattr(self, '_last_net_io'):
             self._last_net_io = net_io
-            self._last_io_time = time.time()
+            self._last_io_time = current_time
+            self._bytes_since_last_calc = {'sent': 0, 'recv': 0}
             bandwidth = {
                 'sent_mbps': 0, 
                 'recv_mbps': 0,
@@ -91,23 +94,40 @@ class ResourceMonitor:
                 'total_recv_gb': round(net_io.bytes_recv / (1024**3), 2)
             }
         else:
-            now = time.time()
-            time_delta = now - self._last_io_time
-            
-            # Calculate bandwidth in Mbps
+            # Accumulate bytes transferred
             bytes_sent = net_io.bytes_sent - self._last_net_io.bytes_sent
             bytes_recv = net_io.bytes_recv - self._last_net_io.bytes_recv
+            self._bytes_since_last_calc['sent'] += bytes_sent
+            self._bytes_since_last_calc['recv'] += bytes_recv
             
-            bandwidth = {
-                'sent_mbps': round((bytes_sent * 8) / (time_delta * 1_000_000), 2),
-                'recv_mbps': round((bytes_recv * 8) / (time_delta * 1_000_000), 2),
-                'total_sent_gb': round(net_io.bytes_sent / (1024**3), 2),
-                'total_recv_gb': round(net_io.bytes_recv / (1024**3), 2)
-            }
+            time_delta = current_time - self._last_io_time
             
-            self._last_net_io = net_io
-            self._last_io_time = now
+            # Only calculate bandwidth every 1 second
+            if time_delta >= 1.0:
+                # Calculate bandwidth in Mbps using accumulated bytes
+                bandwidth = {
+                    'sent_mbps': round((self._bytes_since_last_calc['sent'] * 8) / (time_delta * 1_000_000), 2),
+                    'recv_mbps': round((self._bytes_since_last_calc['recv'] * 8) / (time_delta * 1_000_000), 2),
+                    'total_sent_gb': round(net_io.bytes_sent / (1024**3), 2),
+                    'total_recv_gb': round(net_io.bytes_recv / (1024**3), 2)
+                }
+                
+                # Reset accumulators
+                self._bytes_since_last_calc = {'sent': 0, 'recv': 0}
+                self._last_net_io = net_io
+                self._last_io_time = current_time
+            else:
+                # Use previous bandwidth values if less than 1 second
+                bandwidth = self._last_bandwidth if hasattr(self, '_last_bandwidth') else {
+                    'sent_mbps': 0,
+                    'recv_mbps': 0,
+                    'total_sent_gb': round(net_io.bytes_sent / (1024**3), 2),
+                    'total_recv_gb': round(net_io.bytes_recv / (1024**3), 2)
+                }
 
+        self._last_bandwidth = bandwidth
+        
+        # Always return the full stats dictionary
         return {
             'connection_states': conn_states,
             'total_connections': len(connections),

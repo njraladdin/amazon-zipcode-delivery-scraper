@@ -1,7 +1,7 @@
 {
     "max_concurrent_zipcode_scrapers": 200,
     "port": 8080,
-    "allow_proxy": true,
+    "allow_proxy": false,
     "batch_size": 5,
     "concurrent_requests_control": { 
         "initial_concurrent": 50,
