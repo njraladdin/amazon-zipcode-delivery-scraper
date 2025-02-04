@@ -10,7 +10,6 @@ Amazon Scraper Request Flow:
 """
 
 import tls_client
-from bs4 import BeautifulSoup
 import json
 import http.cookies
 import os
@@ -198,21 +197,6 @@ class AmazonScraper:
             self._log_error(f"Error extracting CSRF token: {str(e)}")
             return None
 
-    def _extract_csrf_token_fallback(self, html):
-        """Fallback method using BeautifulSoup if fast extraction fails"""
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-            location_modal = soup.find(id="nav-global-location-data-modal-action")
-            if location_modal:
-                data_modal = location_modal.get('data-a-modal')
-                if data_modal:
-                    modal_data = json.loads(data_modal)
-                    if 'ajaxHeaders' in modal_data and 'anti-csrftoken-a2z' in modal_data['ajaxHeaders']:
-                        return modal_data['ajaxHeaders']['anti-csrftoken-a2z']
-        except Exception as e:
-            self._log_error(f"Fallback extraction failed: {str(e)}")
-        return None
-
     def _make_modal_html_request(self, csrf_token):
         self._log_info("Requesting modal HTML...")
         modal_url = "https://www.amazon.com/portal-migration/hz/glow/get-rendered-address-selections?deviceType=desktop&pageType=Detail&storeContext=photo&actionSource=desktop-modal"
@@ -239,18 +223,40 @@ class AmazonScraper:
             self._log_error(f"Modal request failed with status code: {response.status_code}")
             return None
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        script = soup.find('script', {'type': 'text/javascript'})
-        
-        if script and script.string and 'CSRF_TOKEN' in script.string:
-            start_index = script.string.find('CSRF_TOKEN : "') + len('CSRF_TOKEN : "')
-            end_index = script.string.find('"', start_index)
-            csrf_token = script.string[start_index:end_index]
-            self._log_success(f"Modal CSRF token extracted: {csrf_token[:10]}...")
+        # Extract CSRF token using string operations
+        self._log_info("Extracting modal CSRF token...")
+        extraction_start = time.time()
+        html = response.text
+
+        try:
+            # Find the script tag containing CSRF token
+            script_start = html.find('<script type="text/javascript">')
+            if script_start == -1:
+                self._log_error("Script tag not found")
+                return None
+
+            # Find CSRF token declaration
+            csrf_start = html.find('CSRF_TOKEN : "', script_start)
+            if csrf_start == -1:
+                self._log_error("CSRF token declaration not found")
+                return None
+
+            # Extract the token
+            token_start = csrf_start + len('CSRF_TOKEN : "')
+            token_end = html.find('"', token_start)
+            
+            if token_end == -1:
+                self._log_error("Could not find end of CSRF token")
+                return None
+
+            csrf_token = html[token_start:token_end]
+            extraction_time = round((time.time() - extraction_start) * 1000, 2)  # Convert to milliseconds
+            self._log_success(f"Modal CSRF token extracted in {extraction_time}ms: {csrf_token[:10]}...")
             return csrf_token
-        
-        self._log_error("Failed to extract modal CSRF token")
-        return None
+
+        except Exception as e:
+            self._log_error(f"Error extracting modal CSRF token: {str(e)}")
+            return None
 
     def _make_change_zipcode_request(self, csrf_token, zipcode):
         self._log_info(f"Changing zipcode to: {zipcode}")
