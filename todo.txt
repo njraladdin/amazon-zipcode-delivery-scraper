@@ -37,7 +37,10 @@ reach 25 seconds:
 - remove sleep delays between zipcodes, done (17 to 12 seconds), done 
 
 
-make a check to see if all delivery times are the same, if yes, something could be wrong 
+- don't start all concurrent tassks at once, but incrementally, done 
+- udpate config for best result (incremental scale up control, batch size)
+
+
 
 implement bigquery, enable in config 
 

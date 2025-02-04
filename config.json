@@ -6,6 +6,6 @@
     "concurrent_requests_control": { 
         "initial_concurrent": 20,
         "scale_up_delay": 0.2,
-        "scale_increment": 10
+        "scale_increment": 20
     }
 } 
