@@ -46,7 +46,7 @@ def parse_delivery_days(delivery_estimate):
     # Handle overnight delivery and today
     delivery_estimate_lower = delivery_estimate.lower()
     if delivery_estimate_lower == 'overnight':
-        return 1, 1
+        return 0, 0
     elif delivery_estimate_lower == 'today':
         return 0, 0
     

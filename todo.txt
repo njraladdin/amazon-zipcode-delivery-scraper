@@ -49,10 +49,18 @@ count prime delivery time in the estimate, also handle 'Overnight' case, done
 test on server. test full list. fixing prime detection might have made it slower , done 
 ----
 
-
-
-
 implement bigquery, done 
 enable in config, done 
 add big query implementation guide, done 
 add deploying to google vm guide, done 
+
+
+feedback 
+---
+handle delivery for 'Today' and 'Overnight', make it be 0 days
+seller id is null when seller is amazon, but seller_name doesnt exist (sometimes)
+include time for overnight / same day 
+
+---
+
+add proxies setup guide 
