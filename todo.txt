@@ -47,4 +47,16 @@ implement bigquery, enable in config
 
 
 
+feedback 
+----
+fix price extraction, comma not seperated correctly 
 
+fix prime detection not working for : 
+https://www.amazon.com/dp/B0054WTPBY?th=1
+https://docs.google.com/spreadsheets/d/1jwRGZcBPpBsppyxmzU6UPuKoA3qa7df8jiMQCGjCUSo/edit?gid=1346763459#gid=1346763459
+
+
+for B0054WTPBY, delivery estimate is  Feb 10 (5 days from 5 feb), but earliest_days says '4' 
+
+count prime delivery time in the estimate 
+----

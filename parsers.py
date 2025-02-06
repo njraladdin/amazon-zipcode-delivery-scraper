@@ -99,7 +99,8 @@ def extract_offer_data(offer_div, is_pinned):
         whole = price_span[0].xpath('.//span[@class="a-price-whole"]/text()')
         fraction = price_span[0].xpath('.//span[@class="a-price-fraction"]/text()')
         if whole and fraction:
-            price_str = whole[0].strip() + fraction[0].strip()
+            # Add decimal point between whole and fraction
+            price_str = whole[0].strip() + '.' + fraction[0].strip()
             price_str = re.sub(r'[^\d.]', '', price_str)
             offer_data['price'] = float(price_str)
             offer_data['total_price'] = offer_data['price']
