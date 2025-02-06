@@ -19,7 +19,8 @@ def parse_offers(html_text):
     filter_list = tree.xpath('//div[@id="aod-filter-list"]')
     has_prime_filter = False
     if filter_list:
-        prime_checkbox = tree.xpath('.//i[@class="a-icon-prime" and @role="img"]')
+        # Look for Prime icon in the filter list - using a more general selector
+        prime_checkbox = filter_list[0].xpath('.//i[contains(@class, "a-icon-prime")]')
         has_prime_filter = len(prime_checkbox) > 0
 
     # Find the pinned offer first (if present)
@@ -92,6 +93,11 @@ def extract_offer_data(offer_div, is_pinned):
         'earliest_days': None,
         'latest_days': None,
     }
+
+    # Check for Prime badge in the offer
+    prime_badge = offer_div.xpath('.//i[contains(@class, "a-icon-prime")]')
+    if prime_badge:
+        offer_data['prime'] = True
 
     # Price components
     price_span = offer_div.xpath('.//span[contains(@class, "a-price")]')
