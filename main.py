@@ -78,18 +78,22 @@ async def startup_event():
     logger.info(f"Started server with {session_pool.get_pool_size()} pre-initialized sessions")
     session_pool.start_background_factory()
     
-    # Initialize BigQuery client
-    for attempt in range(3):  # Try 3 times
-        try:
-            bq_client = AmazonBigQuery('google-service-account.json')
-            logger.info("Successfully initialized BigQuery client")
-            break
-        except Exception as e:
-            logger.error(f"Attempt {attempt + 1} failed to initialize BigQuery client: {e}")
-            if attempt == 2:  # Last attempt
-                logger.error("All attempts to initialize BigQuery client failed")
-                bq_client = None
-            await asyncio.sleep(1)  # Wait before retry
+    # Initialize BigQuery client only if enabled in config
+    if CONFIG.get("allow_bigquery", False):
+        for attempt in range(3):  # Try 3 times
+            try:
+                bq_client = AmazonBigQuery('google-service-account.json')
+                logger.info("Successfully initialized BigQuery client")
+                break
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1} failed to initialize BigQuery client: {e}")
+                if attempt == 2:  # Last attempt
+                    logger.error("All attempts to initialize BigQuery client failed")
+                    bq_client = None
+                await asyncio.sleep(1)  # Wait before retry
+    else:
+        logger.info("BigQuery uploads disabled in configuration")
+        bq_client = None
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -119,6 +123,10 @@ thread_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SCRAPERS)
 
 # Add this function to handle BigQuery upload
 def upload_to_bigquery(data: dict):
+    if not CONFIG.get("allow_bigquery", False):
+        logger.info("Skipping BigQuery upload - disabled in configuration")
+        return
+        
     try:
         if bq_client:
             logger.info(f"Attempting to upload {len(data['results'])} results to BigQuery")

@@ -40,12 +40,6 @@ reach 25 seconds:
 -pre-initialize pool of ready to use amazon sessions, where we just have to change proxy and go to product page, done 
 - manage cached sessions:  increase pool size to always have sessions ready to use, done 
 - add readme : setup project, done 
-
-
-
-
-
-
 feedback 
 ----
 fix price extraction, comma not seperated correctly, done 
@@ -54,6 +48,8 @@ for B0054WTPBY, delivery estimate is  Feb 10 (5 days from 5 feb), but earliest_d
 count prime delivery time in the estimate, also handle 'Overnight' case, done 
 test on server. test full list. fixing prime detection might have made it slower , done 
 ----
+
+
 
 
 implement bigquery, done 
