@@ -42,6 +42,11 @@ def parse_delivery_days(delivery_estimate):
         
     # Add debug logging
     print(f"Parsing delivery estimate: {delivery_estimate}")
+    
+    # Handle overnight delivery
+    if delivery_estimate.lower() == 'overnight':
+        return 1, 1
+    
     # Strip time component from today
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     print(f"Today's date: {today}")
@@ -141,9 +146,18 @@ def extract_offer_data(offer_div, is_pinned):
     # Delivery information
     delivery_promise = offer_div.xpath('.//div[contains(@class, "aod-delivery-promise")]')
     if delivery_promise:
+        # First check for fastest delivery option
+        fastest_delivery = delivery_promise[0].xpath('.//span[@data-csa-c-content-id="DEXUnifiedCXSDM"]')
         primary_delivery = delivery_promise[0].xpath('.//span[@data-csa-c-content-id="DEXUnifiedCXPDM"]')
-        if primary_delivery:
-            shipping_cost = primary_delivery[0].get('data-csa-c-delivery-price')
+        
+        delivery_element = None
+        if fastest_delivery:
+            delivery_element = fastest_delivery[0]
+        elif primary_delivery:
+            delivery_element = primary_delivery[0]
+            
+        if delivery_element:
+            shipping_cost = delivery_element.get('data-csa-c-delivery-price')
             if shipping_cost == 'FREE':
                 offer_data['shipping_cost'] = 0.0
             else:
@@ -152,7 +166,7 @@ def extract_offer_data(offer_div, is_pinned):
             
             offer_data['total_price'] = offer_data['price'] + offer_data['shipping_cost']
 
-            delivery_time = primary_delivery[0].xpath('.//span[@class="a-text-bold"]')
+            delivery_time = delivery_element.xpath('.//span[@class="a-text-bold"]')
             if delivery_time:
                 delivery_text = delivery_time[0].text.strip()
                 offer_data['delivery_estimate'] = delivery_text

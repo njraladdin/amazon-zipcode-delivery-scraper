@@ -51,11 +51,13 @@ feedback
 ----
 fix price extraction, comma not seperated correctly, done 
 
-fix prime detection not working for B0054WTPBY (prime detection wasn't working) , done
+fix prime detection not working for B0054WTPBY , done
 
-for B0054WTPBY, delivery estimate is  Feb 10 (5 days from 5 feb), but earliest_days says '4' 
+for B0054WTPBY, delivery estimate is  Feb 10 (5 days from 5 feb), but earliest_days says '4', done 
 
-count prime delivery time in the estimate 
+count prime delivery time in the estimate, also handle 'Overnight' case, done 
 
-test full list. fixing prime detection might have made it slower 
+
+
+test on server. test full list. fixing prime detection might have made it slower 
 ----
