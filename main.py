@@ -36,6 +36,8 @@ from resource_monitor import ResourceMonitor
 from concurrent.futures import ThreadPoolExecutor
 import time
 from session_pool import SessionPool
+from amazon_bigquery import AmazonBigQuery
+from fastapi.background import BackgroundTasks
 
 # Load default zipcodes from JSON file
 def load_default_zipcodes():
@@ -65,13 +67,29 @@ MAX_CONCURRENT_SCRAPERS = CONFIG.get("max_concurrent_zipcode_scrapers", 200)
 INITIAL_POOL_SIZE = CONFIG.get("initial_session_pool_size", 200)
 REFILL_THRESHOLD = CONFIG.get("session_pool_refill_threshold", 100) # start refilling when number of available sessions is less than this
 
+# Add after other global variables
+bq_client = None
+
 @app.on_event("startup")
 async def startup_event():
-    global session_pool
+    global session_pool, bq_client
     session_pool = SessionPool()
     session_pool.initialize_pool()
     logger.info(f"Started server with {session_pool.get_pool_size()} pre-initialized sessions")
     session_pool.start_background_factory()
+    
+    # Initialize BigQuery client
+    for attempt in range(3):  # Try 3 times
+        try:
+            bq_client = AmazonBigQuery('google-service-account.json')
+            logger.info("Successfully initialized BigQuery client")
+            break
+        except Exception as e:
+            logger.error(f"Attempt {attempt + 1} failed to initialize BigQuery client: {e}")
+            if attempt == 2:  # Last attempt
+                logger.error("All attempts to initialize BigQuery client failed")
+                bq_client = None
+            await asyncio.sleep(1)  # Wait before retry
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -99,8 +117,28 @@ resource_monitor = ResourceMonitor()
 # After CONFIG loading
 thread_pool = ThreadPoolExecutor(max_workers=MAX_CONCURRENT_SCRAPERS)
 
+# Add this function to handle BigQuery upload
+def upload_to_bigquery(data: dict):
+    try:
+        if bq_client:
+            logger.info(f"Attempting to upload {len(data['results'])} results to BigQuery")
+            logger.debug(f"First result sample: {json.dumps(data['results'][0] if data['results'] else 'No results')}")
+            
+            # Log the first offer data as sample
+            if data['results'] and data['results'][0]['offers_data']:
+                logger.debug(f"First offer sample: {json.dumps(data['results'][0]['offers_data'][0])}")
+            
+            success = bq_client.load_offers(data)
+            if success:
+                logger.success(f"Successfully uploaded data to BigQuery for ASIN {data['asin']}")
+            else:
+                logger.error(f"Failed to upload data to BigQuery for ASIN {data['asin']}")
+    except Exception as e:
+        logger.error(f"Error uploading to BigQuery: {str(e)}")
+        logger.exception("Full traceback:")  # This will log the full stack trace
+
 @app.post("/scrape", response_model=ScrapeResponse)
-async def scrape_product(request: ScrapeRequest):
+async def scrape_product(request: ScrapeRequest, background_tasks: BackgroundTasks):
     resource_monitor = ResourceMonitor(monitor_interval=0.1)
     resource_monitor.start()
     
@@ -217,19 +255,25 @@ async def scrape_product(request: ScrapeRequest):
             # Always return sessions to the pool
             session_pool.return_sessions(sessions)
 
+        # Prepare response
+        response_data = ScrapeResponse(
+            asin=request.asin,
+            results=results,
+            total_locations_processed=len(zipcodes_to_check),
+            successful_locations=len(results),
+            failed_locations=len(failed_locations)
+        )
+
+        if not results:
+            raise HTTPException(status_code=404, detail="No data could be retrieved for the given ASIN")
+
+        # Add BigQuery upload as background task with raw data
+        background_tasks.add_task(upload_to_bigquery, response_data.dict())
+        
+        return response_data
+
     finally:
         resource_monitor.stop()
-    
-    if not results:
-        raise HTTPException(status_code=404, detail="No data could be retrieved for the given ASIN")
-    
-    return ScrapeResponse(
-        asin=request.asin,
-        results=results,
-        total_locations_processed=len(zipcodes_to_check),
-        successful_locations=len(results),
-        failed_locations=len(failed_locations)
-    )
 
 if __name__ == "__main__":
     hostname = socket.gethostname()

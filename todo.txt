@@ -42,7 +42,6 @@ reach 25 seconds:
 - add readme : setup project, done 
 
 
-implement bigquery, enable in config 
 
 
 
@@ -50,14 +49,17 @@ implement bigquery, enable in config
 feedback 
 ----
 fix price extraction, comma not seperated correctly, done 
-
 fix prime detection not working for B0054WTPBY , done
-
 for B0054WTPBY, delivery estimate is  Feb 10 (5 days from 5 feb), but earliest_days says '4', done 
-
 count prime delivery time in the estimate, also handle 'Overnight' case, done 
-
-
-
-test on server. test full list. fixing prime detection might have made it slower 
+test on server. test full list. fixing prime detection might have made it slower , done 
 ----
+
+
+implement bigquery, done 
+
+enable in config 
+
+add big query implementation guide 
+
+add deploying to google vm guide 
