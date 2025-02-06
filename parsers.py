@@ -40,45 +40,72 @@ def parse_delivery_days(delivery_estimate):
     if not delivery_estimate:
         return None, None
         
-    # Handle "February 10 - 13" style dates
-    today = datetime.now()
+    # Add debug logging
+    print(f"Parsing delivery estimate: {delivery_estimate}")
+    # Strip time component from today
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    print(f"Today's date: {today}")
+    
     months = {
         'January': 1, 'February': 2, 'March': 3, 'April': 4,
         'May': 5, 'June': 6, 'July': 7, 'August': 8,
         'September': 9, 'October': 10, 'November': 11, 'December': 12
     }
     
-    for month in months:
-        if month in delivery_estimate:
-            # Extract date range like "February 10 - 13"
-            dates = re.findall(r'\d+', delivery_estimate)
-            if len(dates) >= 2:  # We have a range
-                earliest_day = int(dates[0])
-                latest_day = int(dates[1])
-                month_num = months[month]
-                year = today.year
+    # First find which months are mentioned in the estimate
+    mentioned_months = [month for month in months if month in delivery_estimate]
+    
+    if mentioned_months:
+        # Extract date range like "February 10 - 13" or "February 24 - March 11"
+        dates = re.findall(r'\d+', delivery_estimate)
+        if len(dates) >= 2:  # We have a range
+            earliest_day = int(dates[0])
+            latest_day = int(dates[1])
+            
+            # If there are two different months mentioned, use them respectively
+            if len(mentioned_months) >= 2:
+                earliest_month = months[mentioned_months[0]]
+                latest_month = months[mentioned_months[1]]
+            else:
+                earliest_month = latest_month = months[mentioned_months[0]]
+            
+            year = today.year
+            
+            # Handle year transition for each date separately
+            earliest_year = year
+            if earliest_month < today.month:
+                earliest_year += 1
                 
-                # If the month is earlier than current month, it must be next year
-                if month_num < today.month:
-                    year += 1
-                
-                earliest_date = datetime(year, month_num, earliest_day)
-                latest_date = datetime(year, month_num, latest_day)
-                
-                earliest_days = (earliest_date - today).days
-                latest_days = (latest_date - today).days
-                
-                return earliest_days, latest_days
-            elif len(dates) == 1:  # Single date
-                day = int(dates[0])
-                month_num = months[month]
-                year = today.year
-                if month_num < today.month:
-                    year += 1
-                
-                delivery_date = datetime(year, month_num, day)
-                days_until = (delivery_date - today).days
-                return days_until, days_until
+            latest_year = year
+            if latest_month < today.month:
+                latest_year += 1
+            
+            earliest_date = datetime(earliest_year, earliest_month, earliest_day)
+            latest_date = datetime(latest_year, latest_month, latest_day)
+            
+            print(f"Calculated dates - earliest: {earliest_date}, latest: {latest_date}")
+            
+            earliest_days = (earliest_date - today).days
+            latest_days = (latest_date - today).days
+            
+            print(f"Days calculation - earliest_days: {earliest_days}, latest_days: {latest_days}")
+            
+            return earliest_days, latest_days
+            
+        elif len(dates) == 1:  # Single date
+            day = int(dates[0])
+            month_num = months[mentioned_months[0]]
+            year = today.year
+            if month_num < today.month:
+                year += 1
+            
+            delivery_date = datetime(year, month_num, day)
+            print(f"Single date calculation - delivery date: {delivery_date}")
+            
+            days_until = (delivery_date - today).days
+            print(f"Days until delivery: {days_until}")
+            
+            return days_until, days_until
     
     return None, None
 
