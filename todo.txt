@@ -54,10 +54,5 @@ test on server. test full list. fixing prime detection might have made it slower
 
 implement bigquery, done 
 enable in config, done 
-
-
 add big query implementation guide, done 
-
-
-
-add deploying to google vm guide 
+add deploying to google vm guide, done 
