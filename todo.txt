@@ -57,10 +57,13 @@ add deploying to google vm guide, done
 
 feedback 
 ---
-handle delivery for 'Today' and 'Overnight', make it be 0 days
+handle delivery for 'Today' and 'Overnight', make it be 0 days, done 
 seller id is null when seller is amazon, but seller_name doesnt exist (sometimes)
 include time for overnight / same day 
 
 ---
 
 add proxies setup guide 
+
+
+sessions expire after some time 

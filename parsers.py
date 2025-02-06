@@ -18,8 +18,8 @@ def parse_offers(html_text):
     # Check if Prime filter exists
     filter_list = tree.xpath('//div[@id="aod-filter-list"]')
     has_prime_filter = False
-    if filter_list:
-        # Look for Prime icon in the filter list - using a more general selector
+    if filter_list is not None and len(filter_list) > 0:
+        # Look for Prime icon in the filter list
         prime_checkbox = filter_list[0].xpath('.//i[contains(@class, "a-icon-prime")]')
         has_prime_filter = len(prime_checkbox) > 0
 
@@ -159,7 +159,7 @@ def extract_offer_data(offer_div, is_pinned):
         elif primary_delivery:
             delivery_element = primary_delivery[0]
             
-        if delivery_element:
+        if delivery_element is not None:
             shipping_cost = delivery_element.get('data-csa-c-delivery-price')
             if shipping_cost == 'FREE':
                 offer_data['shipping_cost'] = 0.0
