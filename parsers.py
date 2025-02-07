@@ -182,60 +182,32 @@ def extract_offer_data(offer_div, is_pinned):
                 offer_data['earliest_days'] = earliest
                 offer_data['latest_days'] = latest
 
-    # Seller information with enhanced debugging
+    # Seller information
     sold_by_div = offer_div.xpath('.//div[@id="aod-offer-soldBy"]')
-    print(f"\nDebug - Processing offer:")
-    print(f"  Is pinned: {is_pinned}")
-    print(f"  Found sold_by_div: {len(sold_by_div) > 0}")
-    
     if sold_by_div:
-        seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
-        print(f"Debug - Full seller HTML:\n{seller_html}")
-        
         # Try to find seller link (third party sellers) or span (Amazon)
         seller_element = (
             sold_by_div[0].xpath('.//a[@class="a-size-small a-link-normal"]') or 
             sold_by_div[0].xpath('.//span[@class="a-size-small a-color-base"]')
         )
-        print(f"  Found seller_element: {len(seller_element) > 0}")
         
         if seller_element:
-            print("Debug - Seller element attributes:")
-            for attr, value in seller_element[0].items():
-                print(f"  {attr}: {value}")
-            
             offer_data['seller_name'] = seller_element[0].text.strip()
             seller_url = seller_element[0].get('href', '1')  # Use '1' as URL for Amazon.com
-            
-            print(f"Debug - Seller info found:")
-            print(f"  Seller name from text: {offer_data['seller_name']}")
-            print(f"  Seller name from aria-label: {seller_element[0].get('aria-label', 'No aria-label')}")
-            print(f"  Seller URL: {seller_url}")
-            
             offer_data['seller_id'] = extract_seller_id(seller_url)
-            print(f"  Extracted seller ID: {offer_data['seller_id']}")
 
     return offer_data
 
 def extract_seller_id(seller_url):
     """Extract seller ID from seller URL"""
     if not seller_url:
-        print(f"Debug - extract_seller_id: URL is empty or None")
         return None
-        
-    # Add debug logging
-    print(f"Debug - extract_seller_id: Processing URL: {seller_url}")
     
     # Special case for Amazon's URL which is just "1"
     if seller_url == "1":
-        print(f"Debug - extract_seller_id: Found Amazon's special URL")
         return "ATVPDKIKX0DER"  # Amazon.com's seller ID
     
     # Look for seller= parameter in URL
     if 'seller=' in seller_url:
-        seller_id = seller_url.split('seller=')[1].split('&')[0]
-        print(f"Debug - extract_seller_id: Found seller ID: {seller_id}")
-        return seller_id
-    else:
-        print(f"Debug - extract_seller_id: No seller= parameter found in URL")
-        return None
+        return seller_url.split('seller=')[1].split('&')[0]
+    return None
