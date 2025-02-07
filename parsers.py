@@ -110,10 +110,8 @@ def parse_delivery_days(delivery_estimate):
                 year += 1
             
             delivery_date = datetime(year, month_num, day)
-            print(f"Single date calculation - delivery date: {delivery_date}")
             
             days_until = (delivery_date - today).days
-            print(f"Days until delivery: {days_until}")
             
             return days_until, days_until
     
@@ -123,10 +121,6 @@ def extract_offer_data(offer_div, is_pinned):
     """
     Extracts offer data from a single offer div using lxml.
     """
-    # Log the entire offer HTML first
-    offer_html = html.tostring(offer_div, pretty_print=True, encoding='unicode')
-    print(f"\nDebug - Full offer HTML:")
-    print(offer_html)
     
     offer_data = {
         'seller_id': None,

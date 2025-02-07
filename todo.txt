@@ -60,7 +60,7 @@ feedback
 handle delivery for 'Today' and 'Overnight', make it be 0 days, done 
 seller id is null when seller is amazon, but seller_name doesnt exist (sometimes), done 
 
-handle 'tomorrow' delivery 
+handle 'tomorrow' delivery, done 
 
 include time for overnight / same day 
 
