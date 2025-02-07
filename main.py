@@ -241,8 +241,8 @@ async def scrape_product(request: ScrapeRequest, background_tasks: BackgroundTas
                         current_concurrent = min(max_concurrent, 
                                               current_concurrent + scale_increment)
                         last_scale_up = current_time
-                        logger.info(f"Scaling up to {current_concurrent} concurrent requests "
-                                  f"(download: {download_usage:.1f}%, CPU: {cpu_usage:.1f}%)")
+                        # logger.info(f"Scaling up to {current_concurrent} concurrent requests "
+                        #           f"(download: {download_usage:.1f}%, CPU: {cpu_usage:.1f}%)")
                     elif cpu_usage >= 85:
                         # Only scale down by 1 to be less reactive
                         current_concurrent = max(1, current_concurrent - 1)
