@@ -121,6 +121,11 @@ def extract_offer_data(offer_div, is_pinned):
     """
     Extracts offer data from a single offer div using lxml.
     """
+    # Log the entire offer HTML first
+    offer_html = html.tostring(offer_div, pretty_print=True, encoding='unicode')
+    print(f"\nDebug - Full offer HTML:")
+    print(offer_html)
+    
     offer_data = {
         'seller_id': None,
         'buy_box_winner': is_pinned,
@@ -177,17 +182,32 @@ def extract_offer_data(offer_div, is_pinned):
                 offer_data['earliest_days'] = earliest
                 offer_data['latest_days'] = latest
 
-    # Seller information
+    # Seller information with enhanced debugging
     sold_by_div = offer_div.xpath('.//div[@id="aod-offer-soldBy"]')
+    print(f"\nDebug - Processing offer:")
+    print(f"  Is pinned: {is_pinned}")
+    print(f"  Found sold_by_div: {len(sold_by_div) > 0}")
+    
     if sold_by_div:
+        # Log the entire seller div HTML for inspection
+        seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
+        print(f"Debug - Full seller HTML:\n{seller_html}")
+        
         seller_link = sold_by_div[0].xpath('.//a[@class="a-size-small a-link-normal"]')
+        print(f"  Found seller_link: {len(seller_link) > 0}")
+        
         if seller_link:
+            # Log all attributes of the seller link
+            print("Debug - Seller link attributes:")
+            for attr, value in seller_link[0].items():
+                print(f"  {attr}: {value}")
+            
             offer_data['seller_name'] = seller_link[0].text.strip()
             seller_url = seller_link[0].get('href')
             
-            # Add debug logging
             print(f"Debug - Seller info found:")
-            print(f"  Seller name: {offer_data['seller_name']}")
+            print(f"  Seller name from text: {offer_data['seller_name']}")
+            print(f"  Seller name from aria-label: {seller_link[0].get('aria-label', 'No aria-label')}")
             print(f"  Seller URL: {seller_url}")
             
             offer_data['seller_id'] = extract_seller_id(seller_url)
