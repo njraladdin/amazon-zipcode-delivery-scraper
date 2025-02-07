@@ -184,10 +184,16 @@ def extract_offer_data(offer_div, is_pinned):
         if seller_link:
             offer_data['seller_name'] = seller_link[0].text.strip()
             seller_url = seller_link[0].get('href')
+            
+            # Add debug logging
+            print(f"Debug - Seller info found:")
+            print(f"  Seller name: {offer_data['seller_name']}")
+            print(f"  Seller URL: {seller_url}")
+            
             offer_data['seller_id'] = extract_seller_id(seller_url)
+            print(f"  Extracted seller ID: {offer_data['seller_id']}")
             
             if offer_data['seller_id'] is None:
-                # Convert the seller div to string for logging
                 seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
                 print(f"Warning: Could not extract seller ID from HTML:\n{seller_html}\nURL was: {seller_url}")
 
@@ -196,8 +202,17 @@ def extract_offer_data(offer_div, is_pinned):
 def extract_seller_id(seller_url):
     """Extract seller ID from seller URL"""
     if not seller_url:
+        print(f"Debug - extract_seller_id: URL is empty or None")
         return None
+        
+    # Add debug logging
+    print(f"Debug - extract_seller_id: Processing URL: {seller_url}")
+    
     # Look for seller= parameter in URL
     if 'seller=' in seller_url:
-        return seller_url.split('seller=')[1].split('&')[0]
-    return None
+        seller_id = seller_url.split('seller=')[1].split('&')[0]
+        print(f"Debug - extract_seller_id: Found seller ID: {seller_id}")
+        return seller_id
+    else:
+        print(f"Debug - extract_seller_id: No seller= parameter found in URL")
+        return None
