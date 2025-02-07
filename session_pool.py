@@ -113,7 +113,7 @@ class SessionPool:
     
     def _session_health_checker(self):
         """Background worker that checks sessions without removing them"""
-        CHECK_DELAY = 2 # Small delay between session checks
+        CHECK_DELAY = 4 # Small delay between session checks
         
         while self.should_run:
             try:
