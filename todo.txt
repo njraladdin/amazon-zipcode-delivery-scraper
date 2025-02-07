@@ -49,6 +49,8 @@ count prime delivery time in the estimate, also handle 'Overnight' case, done
 test on server. test full list. fixing prime detection might have made it slower , done 
 ----
 
+
+
 implement bigquery, done 
 enable in config, done 
 add big query implementation guide, done 
