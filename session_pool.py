@@ -20,6 +20,7 @@ class SessionPool:
         self.lock = threading.Lock()
         self.cache_file = Path("cached_sessions.json")
         self.is_refilling = False  # New flag to track refill state
+        self.discarded_sessions_count = 0  # Add counter for discarded sessions
         
         # Log the initialization values
         self.logger.info(f"Initializing SessionPool with: target_size={self.min_available_sessions_in_reserve}, "
@@ -341,8 +342,14 @@ class SessionPool:
 
     def return_sessions(self, sessions):
         """Return multiple sessions to the pool"""
-        self.logger.info(f"Returning {len(sessions)} sessions to pool. Current size: {self.sessions.qsize()}")
-        for session in sessions:
+        valid_sessions = [s for s in sessions if s is not None]
+        discarded = len(sessions) - len(valid_sessions)
+        if discarded > 0:
+            self.discarded_sessions_count += discarded
+            self.logger.warning(f"Discarded {discarded} failed sessions. Total discarded: {self.discarded_sessions_count}")
+        
+        self.logger.info(f"Returning {len(valid_sessions)} sessions to pool. Current size: {self.sessions.qsize()}")
+        for session in valid_sessions:
             self.sessions.put(session)
         self.logger.info(f"New pool size after returns: {self.sessions.qsize()}")
 

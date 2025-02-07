@@ -66,7 +66,9 @@ include time for overnight / today   "delivery_estimate": "Overnight 4 AM - 8 AM
 
 ---
 
-add proxies setup guide 
+add proxies setup guide, done 
 
 
-sessions expire after some time 
+lower failure rate, better handle sessions : 
+- discard session if it fails a batch 
+- continously recheck and refresh sessions (keep checkong one after one in the background so it doesnt take to omuch resources)

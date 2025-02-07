@@ -179,10 +179,16 @@ async def scrape_product(request: ScrapeRequest, background_tasks: BackgroundTas
                     
                     try:
                         batch_results = scraper.process_multiple_zipcodes(request.asin, batch_zipcodes)
-                        return batch_results, batch_zipcodes
-                    finally:
-                        # Always return the session to the pool
-                        session_pool.return_sessions([scraper])
+                        if batch_results:  # Only return session to pool if successful
+                            session_pool.return_sessions([scraper])
+                            return batch_results, batch_zipcodes
+                        else:
+                            logger.warning(f"Batch failed, discarding session")
+                            return None, batch_zipcodes
+                    except Exception as e:
+                        logger.error(f"Error processing batch {batch_zipcodes}: {str(e)}")
+                        logger.warning(f"Batch failed, discarding session")
+                        return None, batch_zipcodes
                         
                 except Exception as e:
                     logger.error(f"Error processing batch {batch_zipcodes}: {str(e)}")
