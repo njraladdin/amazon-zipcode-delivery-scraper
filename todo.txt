@@ -70,5 +70,5 @@ add proxies setup guide, done
 
 
 lower failure rate, better handle sessions : 
-- discard session if it fails a batch 
-- continously recheck and refresh sessions (keep checkong one after one in the background so it doesnt take to omuch resources)
+- discard session if it fails a batch, done 
+- continously recheck and refresh sessions (keep checkong one after one in the background so it doesnt take to omuch resources), done 

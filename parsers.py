@@ -233,9 +233,9 @@ def extract_seller_id(seller_url):
     if not seller_url:
         return None
     
-    # Special case for Amazon's URL which is just "1"
-    if seller_url == "1":
-        return "ATVPDKIKX0DER"  # Amazon.com's seller ID
+    # # Special case for Amazon's URL which is just "1"
+    # if seller_url == "1":
+    #     return "ATVPDKIKX0DER"  # Amazon.com's seller ID
     
     # Look for seller= parameter in URL
     if 'seller=' in seller_url:
