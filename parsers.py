@@ -182,12 +182,22 @@ def extract_offer_data(offer_div, is_pinned):
     if sold_by_div:
         seller_link = sold_by_div[0].xpath('.//a[@class="a-size-small a-link-normal"]')
         if seller_link:
-            offer_data['seller_name'] = seller_link[0].text.strip()
+            # Try to get seller name from aria-label first, then fallback to text content
+            aria_label = seller_link[0].get('aria-label', '')
+            if aria_label:
+                # Remove the ". Opens a new page" suffix if present
+                offer_data['seller_name'] = aria_label.split('. ')[0].strip()
+            else:
+                offer_data['seller_name'] = seller_link[0].text.strip()
+            
             seller_url = seller_link[0].get('href')
-            offer_data['seller_id'] = extract_seller_id(seller_url)
+            # Special case for Amazon as seller
+            if seller_url == '1' or 'Amazon.com' in offer_data['seller_name']:
+                offer_data['seller_id'] = 'ATVPDKIKX0DER'  # Amazon.com's seller ID
+            else:
+                offer_data['seller_id'] = extract_seller_id(seller_url)
             
             if offer_data['seller_id'] is None:
-                # Convert the seller div to string for logging
                 seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
                 print(f"Warning: Could not extract seller ID from HTML:\n{seller_html}\nURL was: {seller_url}")
 
