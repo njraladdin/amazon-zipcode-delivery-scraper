@@ -2,6 +2,7 @@ from lxml import html
 import json
 from datetime import datetime, timedelta
 import re
+import os
 
 def parse_offers(html_text):
     """
@@ -12,6 +13,19 @@ def parse_offers(html_text):
             - offers_json is the JSON string of parsed offers
             - has_prime_filter is a boolean indicating if Prime filter is available
     """
+    # Ensure output directory exists
+    os.makedirs('output', exist_ok=True)
+    
+    # Save HTML content to output folder
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_path = f'output/offers_{timestamp}.html'
+    
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(html_text)
+    except Exception as e:
+        print(f"Warning: Could not save HTML to {output_path}: {str(e)}")
+    
     tree = html.fromstring(html_text)
     offers = []
 
@@ -38,19 +52,26 @@ def parse_offers(html_text):
 def parse_delivery_days(delivery_estimate):
     """Convert delivery estimate text to earliest and latest days"""
     if not delivery_estimate:
-        return None, None
+        return None, None, None
         
     # Add debug logging
     print(f"Parsing delivery estimate: {delivery_estimate}")
     
-    # Handle overnight delivery, today, and tomorrow
+    # Handle overnight delivery, today, and tomorrow with time ranges
     delivery_estimate_lower = delivery_estimate.lower()
-    if delivery_estimate_lower == 'overnight':
-        return 0, 0
-    elif delivery_estimate_lower == 'today':
-        return 0, 0
+    
+    # Extract time range if present (e.g., "7 AM - 11 AM")
+    time_range = None
+    time_match = re.search(r'(\d+(?::\d+)?\s*(?:AM|PM)\s*-\s*\d+(?::\d+)?\s*(?:AM|PM))', delivery_estimate, re.IGNORECASE)
+    if time_match:
+        time_range = time_match.group(1)
+    
+    if 'overnight' in delivery_estimate_lower:
+        return 0, 0, time_range
+    elif 'today' in delivery_estimate_lower:
+        return 0, 0, time_range
     elif 'tomorrow' in delivery_estimate_lower:
-        return 1, 1
+        return 1, 1, time_range
     
     # Strip time component from today
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -100,7 +121,7 @@ def parse_delivery_days(delivery_estimate):
             
             print(f"Days calculation - earliest_days: {earliest_days}, latest_days: {latest_days}")
             
-            return earliest_days, latest_days
+            return earliest_days, latest_days, time_range
             
         elif len(dates) == 1:  # Single date
             day = int(dates[0])
@@ -113,9 +134,9 @@ def parse_delivery_days(delivery_estimate):
             
             days_until = (delivery_date - today).days
             
-            return days_until, days_until
+            return days_until, days_until, time_range
     
-    return None, None
+    return None, None, None
 
 def extract_offer_data(offer_div, is_pinned):
     """
@@ -128,6 +149,7 @@ def extract_offer_data(offer_div, is_pinned):
         'prime': False,
         'earliest_days': None,
         'latest_days': None,
+        'delivery_time_range': None,  # New field for time range
     }
 
     # Check for Prime badge in the offer
@@ -172,11 +194,23 @@ def extract_offer_data(offer_div, is_pinned):
 
             delivery_time = delivery_element.xpath('.//span[@class="a-text-bold"]')
             if delivery_time:
-                delivery_text = delivery_time[0].text.strip()
-                offer_data['delivery_estimate'] = delivery_text
-                earliest, latest = parse_delivery_days(delivery_text)
+                delivery_text = ' '.join([text.strip() for text in delivery_time[0].xpath('.//text()')])
+                earliest, latest, time_range = parse_delivery_days(delivery_text)
+                
+                # Format delivery estimate with time range if available
+                if time_range:
+                    if 'overnight' in delivery_text.lower():
+                        offer_data['delivery_estimate'] = f"Overnight {time_range}"
+                    elif 'today' in delivery_text.lower():
+                        offer_data['delivery_estimate'] = f"Today {time_range}"
+                    else:
+                        offer_data['delivery_estimate'] = delivery_text
+                else:
+                    offer_data['delivery_estimate'] = delivery_text
+                
                 offer_data['earliest_days'] = earliest
                 offer_data['latest_days'] = latest
+                offer_data['delivery_time_range'] = time_range
 
     # Seller information
     sold_by_div = offer_div.xpath('.//div[@id="aod-offer-soldBy"]')
