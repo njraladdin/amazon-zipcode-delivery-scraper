@@ -43,12 +43,14 @@ def parse_delivery_days(delivery_estimate):
     # Add debug logging
     print(f"Parsing delivery estimate: {delivery_estimate}")
     
-    # Handle overnight delivery and today
+    # Handle overnight delivery, today, and tomorrow
     delivery_estimate_lower = delivery_estimate.lower()
     if delivery_estimate_lower == 'overnight':
         return 0, 0
     elif delivery_estimate_lower == 'today':
         return 0, 0
+    elif 'tomorrow' in delivery_estimate_lower:
+        return 1, 1
     
     # Strip time component from today
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
