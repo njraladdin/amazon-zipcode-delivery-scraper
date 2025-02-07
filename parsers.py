@@ -185,6 +185,11 @@ def extract_offer_data(offer_div, is_pinned):
             offer_data['seller_name'] = seller_link[0].text.strip()
             seller_url = seller_link[0].get('href')
             offer_data['seller_id'] = extract_seller_id(seller_url)
+            
+            if offer_data['seller_id'] is None:
+                # Convert the seller div to string for logging
+                seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
+                print(f"Warning: Could not extract seller ID from HTML:\n{seller_html}\nURL was: {seller_url}")
 
     return offer_data
 
