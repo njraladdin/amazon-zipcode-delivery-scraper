@@ -208,6 +208,11 @@ def extract_seller_id(seller_url):
     # Add debug logging
     print(f"Debug - extract_seller_id: Processing URL: {seller_url}")
     
+    # Special case for Amazon's URL which is just "1"
+    if seller_url == "1":
+        print(f"Debug - extract_seller_id: Found Amazon's special URL")
+        return "ATVPDKIKX0DER"  # Amazon.com's seller ID
+    
     # Look for seller= parameter in URL
     if 'seller=' in seller_url:
         seller_id = seller_url.split('seller=')[1].split('&')[0]
