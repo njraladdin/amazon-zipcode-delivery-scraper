@@ -76,7 +76,7 @@ async def startup_event():
     session_pool = SessionPool()
     session_pool.initialize_pool()
     logger.info(f"Started server with {session_pool.get_pool_size()} pre-initialized sessions")
-    session_pool.start_background_factory()
+    session_pool.start_background_workers()  # Start both factory and health checker
     
     # Initialize BigQuery client only if enabled in config
     if CONFIG.get("allow_bigquery", False):

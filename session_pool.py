@@ -29,6 +29,7 @@ class SessionPool:
         # Initialize factory thread but don't start it yet
         self.should_run = False
         self.factory_thread = None
+        self.health_check_thread = None  # New thread for health checks
         
     def start_background_factory(self):
         """Start the background factory thread if needed"""
@@ -99,11 +100,59 @@ class SessionPool:
                 self.logger.error(f"Error in session factory: {str(e)}")
                 time.sleep(FACTORY_CHECK_INTERVAL * 2)  # Double interval on error
     
+    def start_health_checker(self):
+        """Start the background health check thread if needed"""
+        with self.lock:
+            if not self.health_check_thread or not self.health_check_thread.is_alive():
+                self.should_run = True
+                self.health_check_thread = threading.Thread(target=self._session_health_checker, daemon=True)
+                self.health_check_thread.start()
+                self.logger.info("Started background health checker")
+            else:
+                self.logger.info("Health checker thread already running")
+    
+    def _session_health_checker(self):
+        """Background worker that checks sessions without removing them"""
+        CHECK_DELAY = 2 # Small delay between session checks
+        
+        while self.should_run:
+            try:
+                # Get a snapshot of current sessions without removing them
+                with self.lock:
+                    current_size = self.sessions.qsize()
+                    sessions_snapshot = list(self.sessions.queue)  # Get internal queue list
+                    
+                self.logger.debug(f"Starting health check cycle of {current_size} sessions")
+                
+                # Check each session
+                for session in sessions_snapshot:
+                    if session and session.is_initialized:
+                        is_healthy = session._make_modal_html_request(session.initial_csrf_token)
+                        if not is_healthy:
+                            # Only remove unhealthy sessions
+                            with self.lock:
+                                try:
+                                    self.sessions.queue.remove(session)
+                                    self.discarded_sessions_count += 1
+                                    self.logger.warning("Removed unhealthy session from pool")
+                                except ValueError:
+                                    pass  # Session was already removed
+                
+                    time.sleep(CHECK_DELAY)  # Small delay between each session check
+                
+                self.logger.info(f"Health check cycle complete - {self.discarded_sessions_count} sessions discarded")
+                
+            except Exception as e:
+                self.logger.error(f"Error in health checker: {str(e)}")
+                time.sleep(5)  # Short sleep on error before retrying
+    
     def shutdown(self):
-        """Cleanup method to stop the factory thread"""
+        """Cleanup method to stop all background threads"""
         self.should_run = False
         if self.factory_thread:
             self.factory_thread.join()
+        if self.health_check_thread:
+            self.health_check_thread.join()
     
     def _save_sessions_to_cache(self):
         """Save session data to cache file"""
@@ -352,6 +401,11 @@ class SessionPool:
         for session in valid_sessions:
             self.sessions.put(session)
         self.logger.info(f"New pool size after returns: {self.sessions.qsize()}")
+
+    def start_background_workers(self):
+        """Start both background factory and health check threads"""
+        self.start_background_factory()
+        self.start_health_checker()
 
 def test_session_pool():
     """Test function to simulate session pool behavior"""
