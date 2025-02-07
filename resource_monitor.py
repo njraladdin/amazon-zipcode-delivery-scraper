@@ -185,20 +185,53 @@ class ResourceMonitor:
         return summary
 
     def print_summary(self):
-        """Print summary statistics"""
+        """Print detailed summary statistics"""
         summary = self.get_statistics_summary()
         
         self.logger.info("\n=== Resource Usage Summary ===")
         
-        for metric, stats in summary.items():
-            self.logger.info(f"\n{metric.replace('_', ' ').title()}:")
-            self.logger.info(f"  Average: {stats['average']:.2f}")
-            self.logger.info(f"  Maximum: {stats['max']:.2f}")
-            self.logger.info(f"  Minimum: {stats['min']:.2f}")
-            self.logger.info(f"  Current: {stats['current']:.2f}")
+        # CPU and Memory section
+        self.logger.info("\nSystem Resources:")
+        for metric in ['cpu_percent', 'memory_percent']:
+            if metric in summary:
+                metric_name = metric.replace('_', ' ').title()
+                stats = summary[metric]
+                self.logger.info(f"{metric_name}:")
+                self.logger.info(f"  Average: {stats['average']:.2f}%")
+                self.logger.info(f"  Peak: {stats['max']:.2f}%")
+                self.logger.info(f"  Minimum: {stats['min']:.2f}%")
+
+        # Network section
+        self.logger.info("\nNetwork Usage:")
+        for metric in ['sent_mbps', 'recv_mbps']:
+            if metric in summary:
+                metric_name = 'Upload' if 'sent' in metric else 'Download'
+                stats = summary[metric]
+                self.logger.info(f"{metric_name} Speed:")
+                self.logger.info(f"  Average: {stats['average']:.2f} Mbps")
+                self.logger.info(f"  Peak: {stats['max']:.2f} Mbps")
+                self.logger.info(f"  Minimum: {stats['min']:.2f} Mbps")
+
+        # Bandwidth usage percentages (if limits were set)
+        if self.bandwidth_limits:
+            for metric in ['upload_usage_pct', 'download_usage_pct']:
+                if metric in summary:
+                    metric_name = metric.replace('_', ' ').title()
+                    stats = summary[metric]
+                    self.logger.info(f"{metric_name}:")
+                    self.logger.info(f"  Average: {stats['average']:.1f}%")
+                    self.logger.info(f"  Peak: {stats['max']:.1f}%")
+
+        # Connections
+        if 'connections' in summary:
+            self.logger.info("\nConnections:")
+            stats = summary['connections']
+            self.logger.info(f"  Average: {stats['average']:.1f}")
+            self.logger.info(f"  Peak: {stats['max']}")
+            self.logger.info(f"  Minimum: {stats['min']}")
 
     def _monitor_loop(self):
-        log_counter = 0  # Counter for logging
+        """Monitor loop that collects data without logging"""
         while self.running:
             stats = self._get_resource_usage()
             
@@ -211,48 +244,24 @@ class ResourceMonitor:
             # Update statistics history
             self._update_stats_history(stats)
             
-            # Only log every second (while monitoring more frequently)
-            log_counter += 1
-            if log_counter >= (1.0 / self.monitor_interval):
-                log_counter = 0
-                
-                self.logger.info("\n=== System Resource Usage ===")
-                self.logger.info(f"CPU Usage: {stats['cpu_percent']}%")
-                self.logger.info(f"Memory Usage: {stats['memory_percent']}%")
-                
-                self.logger.info("\n=== Network Resource Usage ===")
-                self.logger.info("Connection States:")
-                for state, count in stats['connection_states'].items():
-                    if count > 0:  # Only log non-zero states
-                        self.logger.info(f"  {state}: {count}")
-                
-                self.logger.info(f"Total Active Connections: {stats['total_connections']}")
-                self.logger.info(f"Open File Descriptors: {stats['file_descriptors']}")
-                
-                if stats['socket_errors']['dropped_packets'] > 0 or stats['socket_errors']['errors'] > 0:
-                    self.logger.warning("Network Issues Detected:")
-                    self.logger.warning(f"  Dropped Packets: {stats['socket_errors']['dropped_packets']}")
-                    self.logger.warning(f"  Network Errors: {stats['socket_errors']['errors']}")
-                
-                self.logger.info("\nBandwidth Usage:")
-                self.logger.info(f"  Upload: {stats['bandwidth']['sent_mbps']} Mbps")
-                self.logger.info(f"  Download: {stats['bandwidth']['recv_mbps']} Mbps")
-                if self.bandwidth_limits:
-                    self.logger.info(f"  Upload Usage: {stats['bandwidth'].get('upload_usage_pct', 0):.1f}%")
-                    self.logger.info(f"  Download Usage: {stats['bandwidth'].get('download_usage_pct', 0):.1f}%")
-                self.logger.info(f"  Total Sent: {stats['bandwidth']['total_sent_gb']} GB")
-                self.logger.info(f"  Total Received: {stats['bandwidth']['total_recv_gb']} GB")
-            
             time.sleep(self.monitor_interval)
 
     def start(self):
+        """Start monitoring with initial log message"""
         self.running = True
+        self.logger.info("\n=== Starting Resource Monitoring ===")
+        if self.bandwidth_limits:
+            self.logger.info(f"Bandwidth limits:")
+            self.logger.info(f"  Download: {self.bandwidth_limits['download_mbps']:.2f} Mbps")
+            self.logger.info(f"  Upload: {self.bandwidth_limits['upload_mbps']:.2f} Mbps")
+        
         self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.monitor_thread.start()
 
     def stop(self):
+        """Stop monitoring and print final summary"""
         self.running = False
         if self.monitor_thread:
             self.monitor_thread.join()
-        # Print summary when stopping
+        self.logger.info("\n=== Stopping Resource Monitoring ===")
         self.print_summary() 
