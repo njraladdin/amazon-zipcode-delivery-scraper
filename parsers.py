@@ -184,28 +184,36 @@ def extract_offer_data(offer_div, is_pinned):
 
     # Seller information with enhanced debugging
     sold_by_div = offer_div.xpath('.//div[@id="aod-offer-soldBy"]')
+    print(f"\nDebug - Processing offer:")
+    print(f"  Is pinned: {is_pinned}")
+    print(f"  Found sold_by_div: {len(sold_by_div) > 0}")
+    
     if sold_by_div:
-        seller_link = sold_by_div[0].xpath('.//a[@class="a-size-small a-link-normal"]')
-        if seller_link:
-            # Get seller name from aria-label (removing ". Opens a new page") or text content
-            seller_name = seller_link[0].get('aria-label', '').split('. ')[0] or seller_link[0].text.strip()
-            if seller_name:
-                offer_data['seller_name'] = seller_name
+        seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
+        print(f"Debug - Full seller HTML:\n{seller_html}")
+        
+        # Try to find seller link (third party sellers) or span (Amazon)
+        seller_element = (
+            sold_by_div[0].xpath('.//a[@class="a-size-small a-link-normal"]') or 
+            sold_by_div[0].xpath('.//span[@class="a-size-small a-color-base"]')
+        )
+        print(f"  Found seller_element: {len(seller_element) > 0}")
+        
+        if seller_element:
+            print("Debug - Seller element attributes:")
+            for attr, value in seller_element[0].items():
+                print(f"  {attr}: {value}")
             
-            offer_data['seller_name'] = seller_link[0].text.strip()
-            seller_url = seller_link[0].get('href')
+            offer_data['seller_name'] = seller_element[0].text.strip()
+            seller_url = seller_element[0].get('href', '1')  # Use '1' as URL for Amazon.com
             
             print(f"Debug - Seller info found:")
             print(f"  Seller name from text: {offer_data['seller_name']}")
-            print(f"  Seller name from aria-label: {seller_link[0].get('aria-label', 'No aria-label')}")
+            print(f"  Seller name from aria-label: {seller_element[0].get('aria-label', 'No aria-label')}")
             print(f"  Seller URL: {seller_url}")
             
             offer_data['seller_id'] = extract_seller_id(seller_url)
             print(f"  Extracted seller ID: {offer_data['seller_id']}")
-            
-            if offer_data['seller_id'] is None:
-                seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
-                print(f"Warning: Could not extract seller ID from HTML:\n{seller_html}\nURL was: {seller_url}")
 
     return offer_data
 
