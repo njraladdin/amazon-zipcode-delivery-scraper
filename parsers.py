@@ -184,23 +184,13 @@ def extract_offer_data(offer_div, is_pinned):
 
     # Seller information with enhanced debugging
     sold_by_div = offer_div.xpath('.//div[@id="aod-offer-soldBy"]')
-    print(f"\nDebug - Processing offer:")
-    print(f"  Is pinned: {is_pinned}")
-    print(f"  Found sold_by_div: {len(sold_by_div) > 0}")
-    
     if sold_by_div:
-        # Log the entire seller div HTML for inspection
-        seller_html = html.tostring(sold_by_div[0], pretty_print=True, encoding='unicode')
-        print(f"Debug - Full seller HTML:\n{seller_html}")
-        
         seller_link = sold_by_div[0].xpath('.//a[@class="a-size-small a-link-normal"]')
-        print(f"  Found seller_link: {len(seller_link) > 0}")
-        
         if seller_link:
-            # Log all attributes of the seller link
-            print("Debug - Seller link attributes:")
-            for attr, value in seller_link[0].items():
-                print(f"  {attr}: {value}")
+            # Get seller name from aria-label (removing ". Opens a new page") or text content
+            seller_name = seller_link[0].get('aria-label', '').split('. ')[0] or seller_link[0].text.strip()
+            if seller_name:
+                offer_data['seller_name'] = seller_name
             
             offer_data['seller_name'] = seller_link[0].text.strip()
             seller_url = seller_link[0].get('href')
