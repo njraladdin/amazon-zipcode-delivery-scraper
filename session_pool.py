@@ -141,7 +141,8 @@ class SessionPool:
                     time.sleep(CHECK_DELAY)  # Small delay between each session check
                 
                 self.logger.info(f"Health check cycle complete - {self.discarded_sessions_count} sessions discarded")
-                
+                time.sleep(60)
+
             except Exception as e:
                 self.logger.error(f"Error in health checker: {str(e)}")
                 time.sleep(5)  # Short sleep on error before retrying
