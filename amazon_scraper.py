@@ -327,36 +327,7 @@ class AmazonScraper:
         
         return response
 
-    def _get_product_page(self, asin, csrf_token):
-        self._log_info(f"Fetching product page for ASIN: {asin}")
-        product_url = f"https://www.amazon.com/dp/{asin}"
-        
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'accept-language': 'en-US,en;q=0.9',
-            'anti-csrftoken-a2z': csrf_token,
-            'cache-control': 'no-cache',
-            'device-memory': '8',
-            'dpr': '1',
-            'ect': '4g',
-            'upgrade-insecure-requests': '1',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
-            'viewport-width': '1120'
-        }
-        
-        response = self.session.get(product_url, headers=headers)
-        
-        if response.status_code == 200:
-            self._log_success("Product page fetched successfully")
-            # Just directly write the file
-            os.makedirs('output', exist_ok=True)
-            with open(f'output/product_page_{asin}.html', 'w', encoding='utf-8', errors='ignore') as f:
-                f.write(response.text)
-                self._log_success(f"Saved product page to output/product_page_{asin}.html")
-        else:
-            self._log_error(f"Failed to fetch product page. Status code: {response.status_code}")
-        
-        return response.text
+    
 
     def _verify_zipcode_change(self, html_text, zipcode):
         """Verify that the zipcode appears multiple times in the page HTML"""
