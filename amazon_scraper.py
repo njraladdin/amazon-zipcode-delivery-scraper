@@ -62,6 +62,7 @@ class AmazonScraper:
         self.session = None
         self.initial_csrf_token = None
         self.is_initialized = False
+        self.product_details = None
 
     def _log_info(self, message):
         self.logger.info(message)
@@ -88,7 +89,7 @@ class AmazonScraper:
         
         self._log_info("Created fresh session")
 
-    def _make_initial_product_page_request(self, asin):
+    def _make_initial_product_page_request(self, asin, parse_details=False):
         self._log_info(f"Making initial request for ASIN: {asin}")
         initial_url = "https://www.amazon.com"
         product_url = f"https://www.amazon.com/dp/{asin}"
@@ -111,29 +112,33 @@ class AmazonScraper:
 
         self._log_info("Accessing product page...")
         response = self.session.get(product_url, headers=headers)
+        self.session.last_response = response  # Store the response for later use
         
         if response.status_code != 200:
             self._log_error(f"Product page request failed with status code: {response.status_code}")
             return None
 
-        # Save the product page HTML
-        os.makedirs('output', exist_ok=True)
-        html_filename = f'output/product_page_{asin}.html'
-        with open(html_filename, 'w', encoding='utf-8', errors='ignore') as f:
-            f.write(response.text)
-            self._log_success(f"Saved product page to {html_filename}")
+        # Save the product page HTML only if we're saving output
+        if SAVE_OUTPUT:
+            os.makedirs('output', exist_ok=True)
+            html_filename = f'output/product_page_{asin}.html'
+            with open(html_filename, 'w', encoding='utf-8', errors='ignore') as f:
+                f.write(response.text)
+                self._log_success(f"Saved product page to {html_filename}")
 
-        # Parse product details and save to JSON
-        try:
-            product_details = parse_product_details(response.text)
-            
-            # Save product details to JSON file
-            json_filename = f'output/product_details_{asin}_{time.strftime("%Y%m%d_%H%M%S")}.json'
-            with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump(product_details, f, indent=2, ensure_ascii=False)
-                self._log_success(f"Saved parsed product details to {json_filename}")
-        except Exception as e:
-            self._log_error(f"Failed to parse or save product details: {str(e)}")
+        # Parse product details only if explicitly requested and if we don't have them
+        if parse_details and not self.product_details:
+            try:
+                self.product_details = parse_product_details(response.text)
+                
+                # Save product details to JSON file if saving is enabled
+                if SAVE_OUTPUT:
+                    json_filename = f'output/product_details_{asin}_{time.strftime("%Y%m%d_%H%M%S")}.json'
+                    with open(json_filename, 'w', encoding='utf-8') as f:
+                        json.dump(self.product_details, f, indent=2, ensure_ascii=False)
+                        self._log_success(f"Saved parsed product details to {json_filename}")
+            except Exception as e:
+                self._log_error(f"Failed to parse or save product details: {str(e)}")
 
         # Extract CSRF token using string operations
         self._log_info("Extracting CSRF token...")
@@ -429,11 +434,11 @@ class AmazonScraper:
             'zipcodes_processing': []  # Will store timing for each zipcode
         }
         
-        # Since we're using pre-initialized sessions, we just need to get CSRF token for this ASIN
+        # Get product details once at the start
         init_start = time.time()
         try:
-            # Just get CSRF token for the new product page
-            self.initial_csrf_token = self._make_initial_product_page_request(asin)
+            # Get CSRF token and product details for the new product page
+            self.initial_csrf_token = self._make_initial_product_page_request(asin, parse_details=True)
             if not self.initial_csrf_token:
                 self._log_error("Failed to get CSRF token for new product")
                 return results
@@ -443,7 +448,7 @@ class AmazonScraper:
         except Exception as e:
             self._log_error(f"Product page initialization failed: {str(e)}")
             return results
-        
+
         # Process each zipcode sequentially with the initialized session
         for zipcode in zipcodes:
             zipcode_timing = {
@@ -492,28 +497,22 @@ class AmazonScraper:
             except Exception as e:
                 self._log_error(f"Error processing zipcode {zipcode}: {str(e)}")
                 continue
-        
-        # Calculate and log total processing time
-        total_time = round(time.time() - process_start, 2)
-        timings['total_processing_time'] = total_time
-        
-        # Log overall timing summary
-        self._log_info("\n=== Overall Timing Summary ===")
-        self._log_info(f"Session initialization: {timings['session_initialization']} seconds")
-        self._log_info("\nPer-zipcode processing times:")
-        for zt in timings['zipcodes_processing']:
-            self._log_info(f"\nZipcode {zt['zipcode']} ({zt['total_time']} seconds):")
-            for step, duration in zt['steps'].items():
+
+        # Log timing breakdown for all zipcodes
+        self._log_info("\nTiming breakdown for all zipcodes:")
+        for timing in timings['zipcodes_processing']:  # timing is already a dict with 'zipcode' key
+            self._log_info(f"Zipcode {timing['zipcode']}:")
+            for step, duration in timing['steps'].items():
                 self._log_info(f"  {step}: {duration} seconds")
-        self._log_info(f"\nTotal processing time: {total_time} seconds")
+            self._log_info(f"  Total zipcode processing time: {timing['total_time']} seconds")
+
+        self._log_info(f"\nTotal time for all zipcodes: {round(time.time() - process_start, 2)} seconds")
         
         return results
 
     def _process_zipcode_with_session(self, asin: str, zipcode: str, csrf_token: str) -> Dict[str, Any]:
         """Process a single zipcode with the existing session"""
         try:
-            timings = {}
-            start_time = time.time()
             self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
             
             # Initialize final data object
@@ -522,27 +521,17 @@ class AmazonScraper:
                 "zip_code": zipcode,
                 "timestamp": int(time.time()),
                 "offers_data": None,
-                "metadata": {
-                    "total_offers": 0,
-                    "prime_eligible_offers": 0,
-                    "collection_time_seconds": 0,
-                    "step_timings": {}  # Add this to store step timings
-                }
+                "product_details": self.product_details
             }
             
             # Get and parse offers pages
             self._log_info("Parsing offers pages...")
             
-            all_offers_start = time.time()
             all_offers_html = self._get_offers_page(asin, csrf_token)
-            timings['all_offers_request'] = round(time.time() - all_offers_start, 2)
             
             try:
-                # Time the all offers parsing
-                parse_start = time.time()
                 offers_json, has_prime_filter = parse_offers(all_offers_html)
                 all_offers_data = json.loads(offers_json)
-                timings['all_offers_parsing'] = round(time.time() - parse_start, 2)
                 
                 self._log_success(f"All offers page parsed successfully - Found {len(all_offers_data)} offers")
                 self._log_info(f"Prime filter available: {has_prime_filter}")
@@ -550,58 +539,32 @@ class AmazonScraper:
                 prime_offers_data = []
                 # Only make Prime-only request if Prime filter exists
                 if has_prime_filter:
-                    # Time the prime offers request and parsing
-                    prime_start = time.time()
                     prime_offers_html = self._get_offers_page(asin, csrf_token, prime_only=True)
-                    timings['prime_offers_request'] = round(time.time() - prime_start, 2)
-                    
                     try:
-                        prime_parse_start = time.time()
                         prime_offers_json, _ = parse_offers(prime_offers_html)
                         prime_offers_data = json.loads(prime_offers_json)
-                        timings['prime_offers_parsing'] = round(time.time() - prime_parse_start, 2)
-                        
                         self._log_success(f"Prime offers page parsed successfully - Found {len(prime_offers_data)} Prime eligible offers")
                     except Exception as e:
                         self._log_error(f"Failed to parse Prime offers page: {str(e)}")
                 else:
                     self._log_info("No Prime filter available - skipping Prime-only request")
 
+                # Merge offers data
+                offers_data = []
+                prime_seller_ids = {offer['seller_id'] for offer in prime_offers_data}
+                
+                for offer in all_offers_data:
+                    offer['prime'] = offer['seller_id'] in prime_seller_ids
+                    offers_data.append(offer)
+                
+                # Update final data
+                final_data["offers_data"] = offers_data
+                
+                return final_data
+
             except Exception as e:
                 self._log_error(f"Failed to parse all offers page: {str(e)}")
                 return None
-
-            # Time the offer merging process
-            merge_start = time.time()
-            offers_data = []
-            prime_seller_ids = {offer['seller_id'] for offer in prime_offers_data}
-            
-            for offer in all_offers_data:
-                offer['prime'] = offer['seller_id'] in prime_seller_ids
-                offers_data.append(offer)
-            timings['offer_merging'] = round(time.time() - merge_start, 2)
-            
-            # Update final data
-            final_data["offers_data"] = offers_data
-            final_data["metadata"].update({
-                "total_offers": len(offers_data),
-                "prime_eligible_offers": len(prime_seller_ids),
-                "collection_time_seconds": round(time.time() - start_time, 2),
-                "step_timings": timings
-            })
-
-            # Log the timing breakdown
-            self._log_info("\nTiming breakdown:")
-            for step, duration in timings.items():
-                self._log_info(f"  {step}: {duration} seconds")
-            self._log_info(f"  Total time: {final_data['metadata']['collection_time_seconds']} seconds\n")
-
-            self._save_to_file(
-                final_data, 
-                f'final_{asin}_{zipcode}_{time.strftime("%Y%m%d_%H%M%S")}.json'
-            )
-            
-            return final_data
 
         except Exception as e:
             self._log_error(f"Unexpected error for zipcode {zipcode}: {str(e)}")
