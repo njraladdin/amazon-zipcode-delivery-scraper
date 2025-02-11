@@ -13,7 +13,7 @@ import tls_client
 import json
 import http.cookies
 import os
-from parsers import parse_offers
+from parsers import parse_offers, parse_product_details
 from colorama import init, Fore, Style
 import time
 import random
@@ -115,6 +115,25 @@ class AmazonScraper:
         if response.status_code != 200:
             self._log_error(f"Product page request failed with status code: {response.status_code}")
             return None
+
+        # Save the product page HTML
+        os.makedirs('output', exist_ok=True)
+        html_filename = f'output/product_page_{asin}.html'
+        with open(html_filename, 'w', encoding='utf-8', errors='ignore') as f:
+            f.write(response.text)
+            self._log_success(f"Saved product page to {html_filename}")
+
+        # Parse product details and save to JSON
+        try:
+            product_details = parse_product_details(response.text)
+            
+            # Save product details to JSON file
+            json_filename = f'output/product_details_{asin}_{time.strftime("%Y%m%d_%H%M%S")}.json'
+            with open(json_filename, 'w', encoding='utf-8') as f:
+                json.dump(product_details, f, indent=2, ensure_ascii=False)
+                self._log_success(f"Saved parsed product details to {json_filename}")
+        except Exception as e:
+            self._log_error(f"Failed to parse or save product details: {str(e)}")
 
         # Extract CSRF token using string operations
         self._log_info("Extracting CSRF token...")
@@ -329,6 +348,11 @@ class AmazonScraper:
         
         if response.status_code == 200:
             self._log_success("Product page fetched successfully")
+            # Just directly write the file
+            os.makedirs('output', exist_ok=True)
+            with open(f'output/product_page_{asin}.html', 'w', encoding='utf-8', errors='ignore') as f:
+                f.write(response.text)
+                self._log_success(f"Saved product page to output/product_page_{asin}.html")
         else:
             self._log_error(f"Failed to fetch product page. Status code: {response.status_code}")
         

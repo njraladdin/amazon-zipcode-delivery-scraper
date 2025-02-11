@@ -9,6 +9,9 @@ import json
 import os
 from pathlib import Path
 
+# Add this constant at the top of the file, after the imports
+ALLOW_HEALTH_AND_FACTORY_CHECKS = False
+
 class SessionPool:
     def __init__(self):
         self.logger = setup_logger('SessionPool')
@@ -33,7 +36,11 @@ class SessionPool:
         
     def start_background_factory(self):
         """Start the background factory thread if needed"""
-        with self.lock:  # Add thread safety
+        if not ALLOW_HEALTH_AND_FACTORY_CHECKS:
+            self.logger.info("Background factory disabled by configuration")
+            return
+            
+        with self.lock:
             if not self.factory_thread or not self.factory_thread.is_alive():
                 self.should_run = True
                 self.factory_thread = threading.Thread(target=self._session_factory_worker, daemon=True)
@@ -102,6 +109,10 @@ class SessionPool:
     
     def start_health_checker(self):
         """Start the background health check thread if needed"""
+        if not ALLOW_HEALTH_AND_FACTORY_CHECKS:
+            self.logger.info("Health checker disabled by configuration")
+            return
+            
         with self.lock:
             if not self.health_check_thread or not self.health_check_thread.is_alive():
                 self.should_run = True

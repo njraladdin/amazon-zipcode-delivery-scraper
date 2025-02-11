@@ -28,9 +28,6 @@ work concurrently on multiple zipcodes, done
 deploy on VM, done 
 load zipcodes from file, and test with full zipcodes list, done 
 
-
-
-
 reach 25 seconds: 
 - remove going to product page, immidiately get offers page, done (from 30 seconds to 20 seconds)
 - instead of doing the full process for each zipcode. allow each AmazonScraper instance to browse thourgh multiple zipcodes, done (20 to 17 seconds)
@@ -48,29 +45,24 @@ for B0054WTPBY, delivery estimate is  Feb 10 (5 days from 5 feb), but earliest_d
 count prime delivery time in the estimate, also handle 'Overnight' case, done 
 test on server. test full list. fixing prime detection might have made it slower , done 
 ----
-
-
-
 implement bigquery, done 
 enable in config, done 
 add big query implementation guide, done 
 add deploying to google vm guide, done 
-
-
 feedback 
 ---
 handle delivery for 'Today' and 'Overnight', make it be 0 days, done 
 seller id is null when seller is amazon, but seller_name doesnt exist (sometimes), done 
-
 handle 'tomorrow' delivery, done 
-
 include time for overnight / today   "delivery_estimate": "Overnight 4 AM - 8 AM", done 
-
 ---
-
 add proxies setup guide, done 
-
-
 lower failure rate, better handle sessions : 
 - discard session if it fails a batch, done 
 - continously recheck and refresh sessions (keep checkong one after one in the background so it doesnt take to omuch resources), done 
+
+
+
+parse product info and add to response 
+add tests to help developers understand project quicker 
+
