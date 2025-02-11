@@ -9,7 +9,6 @@ import json
 import os
 from pathlib import Path
 
-# Add this constant at the top of the file, after the imports
 ALLOW_HEALTH_AND_FACTORY_CHECKS = True
 
 class SessionPool:
