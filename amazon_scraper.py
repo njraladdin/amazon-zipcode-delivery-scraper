@@ -428,14 +428,7 @@ class AmazonScraper:
     def process_multiple_zipcodes(self, asin: str, zipcodes: List[str]) -> List[Dict[str, Any]]:
         """Process multiple zipcodes using the same session"""
         results = []
-        process_start = time.time()
-        timings = {
-            'session_initialization': 0,
-            'zipcodes_processing': []  # Will store timing for each zipcode
-        }
         
-        # Get product details once at the start
-        init_start = time.time()
         try:
             # Get CSRF token and product details for the new product page
             self.initial_csrf_token = self._make_initial_product_page_request(asin, parse_details=True)
@@ -443,38 +436,21 @@ class AmazonScraper:
                 self._log_error("Failed to get CSRF token for new product")
                 return results
             
-            timings['session_initialization'] = round(time.time() - init_start, 2)
-            self._log_info(f"\nProduct page initialization took: {timings['session_initialization']} seconds")
         except Exception as e:
             self._log_error(f"Product page initialization failed: {str(e)}")
             return results
 
         # Process each zipcode sequentially with the initialized session
         for zipcode in zipcodes:
-            zipcode_timing = {
-                'zipcode': zipcode,
-                'total_time': 0,
-                'steps': {}
-            }
-            
             try:
                 self._log_info(f"Processing zipcode {zipcode} with existing session")
-                zipcode_start = time.time()
                 
-                # Time modal request
-                modal_start = time.time()
                 csrf_token2 = self._make_modal_html_request(self.initial_csrf_token)
-                zipcode_timing['steps']['modal_request'] = round(time.time() - modal_start, 2)
-                
                 if not csrf_token2:
                     self._log_error(f"Failed to get modal CSRF token for zipcode {zipcode}")
                     continue
 
-                # Time zipcode change
-                change_start = time.time()
                 change_response = self._make_change_zipcode_request(csrf_token2, zipcode)
-                zipcode_timing['steps']['zipcode_change'] = round(time.time() - change_start, 2)
-                
                 if not change_response:
                     self._log_error(f"Failed to change zipcode to {zipcode}")
                     continue
@@ -482,31 +458,11 @@ class AmazonScraper:
                 # Process offers and get result
                 result = self._process_zipcode_with_session(asin, zipcode, csrf_token2)
                 if result:
-                    # Add the internal step timings to our zipcode timing
-                    zipcode_timing['steps'].update(result['metadata']['step_timings'])
-                    zipcode_timing['total_time'] = round(time.time() - zipcode_start, 2)
-                    timings['zipcodes_processing'].append(zipcode_timing)
                     results.append(result)
-                    
-                    # Log timing breakdown for this zipcode
-                    self._log_info(f"\nTiming breakdown for zipcode {zipcode}:")
-                    for step, duration in zipcode_timing['steps'].items():
-                        self._log_info(f"  {step}: {duration} seconds")
-                    self._log_info(f"  Total zipcode processing time: {zipcode_timing['total_time']} seconds")
-                
+            
             except Exception as e:
                 self._log_error(f"Error processing zipcode {zipcode}: {str(e)}")
                 continue
-
-        # Log timing breakdown for all zipcodes
-        self._log_info("\nTiming breakdown for all zipcodes:")
-        for timing in timings['zipcodes_processing']:  # timing is already a dict with 'zipcode' key
-            self._log_info(f"Zipcode {timing['zipcode']}:")
-            for step, duration in timing['steps'].items():
-                self._log_info(f"  {step}: {duration} seconds")
-            self._log_info(f"  Total zipcode processing time: {timing['total_time']} seconds")
-
-        self._log_info(f"\nTotal time for all zipcodes: {round(time.time() - process_start, 2)} seconds")
         
         return results
 

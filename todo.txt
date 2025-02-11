@@ -63,6 +63,7 @@ lower failure rate, better handle sessions :
 
 
 
-parse product info and add to response 
+parse product info, done 
+only parse product info once, not for all zipcodes (to keep under time limit), done 
 add tests to help developers understand project quicker 
 
