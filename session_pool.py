@@ -212,6 +212,13 @@ class SessionPool:
         if not self.cache_file.exists():
             return False
         
+        # Check cache age
+        cache_age = time.time() - self.cache_file.stat().st_mtime
+        if cache_age > 86400:  # 86400 seconds = 24 hours
+            self.logger.info(f"Cache file is {cache_age/3600:.1f} hours old. Deleting old cache.")
+            self.cache_file.unlink()  # Delete the old cache file
+            return False
+        
         try:
             with open(self.cache_file, 'r') as f:
                 session_data = json.load(f)
@@ -269,56 +276,74 @@ class SessionPool:
             return False
         
     def initialize_pool(self):
-        """Initialize the pool with sessions concurrently"""
+        """Initialize the pool with sessions concurrently. Returns number of successful sessions created."""
         start_time = time.time()
+        successful_sessions = 0
         
         # Try to load from cache first
         if self._load_sessions_from_cache():
-            remaining = self.min_available_sessions_in_reserve - self.sessions.qsize()
+            successful_sessions = self.sessions.qsize()
+            remaining = self.min_available_sessions_in_reserve - successful_sessions
             cache_time = time.time() - start_time
             self.logger.info(f"Cache loading took {cache_time:.2f} seconds")
             
             if remaining <= 0:
                 self.logger.info(f"Pool fully initialized from cache in {cache_time:.2f} seconds")
-                return
+                return successful_sessions
+            
             self.logger.info(f"Initializing remaining {remaining} sessions...")
-            self.min_available_sessions_in_reserve = remaining
+            target_sessions = remaining
             start_time = time.time()  # Reset timer for remaining sessions
         else:
             self.logger.info(f"Initializing fresh pool with {self.min_available_sessions_in_reserve} sessions...")
+            target_sessions = self.min_available_sessions_in_reserve
         
         max_concurrent = self.config.get('max_concurrent_zipcode_scrapers', 40)
         self.logger.info(f"Using max concurrent initializations: {max_concurrent}")
         
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            # Submit all initialization tasks
             futures = []
-            for i in range(self.min_available_sessions_in_reserve):
+            for i in range(target_sessions):
                 future = executor.submit(self._initialize_single_session, i)
                 futures.append(future)
             
-            # Track progress
+            # Track progress and check error rate
             completed = 0
             failed = 0
+            error_threshold = min(5, target_sessions // 2)  # 50% of target or at least 5 errors
+            min_success_rate = 0.2  # At least 20% success rate
+            
             for future in futures:
                 try:
                     if future.result():
                         completed += 1
+                        successful_sessions += 1
                     else:
                         failed += 1
                 except Exception as e:
                     self.logger.error(f"Session initialization failed with error: {str(e)}")
                     failed += 1
                 
+                # Check if we should abort due to too many errors
+                if failed >= error_threshold:
+                    current_success_rate = completed / (completed + failed)
+                    if current_success_rate < min_success_rate:
+                        self.logger.error(
+                            f"Aborting pool initialization: Too many errors "
+                            f"({failed} errors, {completed} successes, {current_success_rate:.1%} success rate)"
+                        )
+                        # Return current successful sessions - main.py will decide if it's enough
+                        return successful_sessions
+                
                 # Log progress
                 total = completed + failed
-                self.logger.info(f"Progress: {total}/{self.min_available_sessions_in_reserve} "
+                self.logger.info(f"Progress: {total}/{target_sessions} "
                                f"(Success: {completed}, Failed: {failed})")
         
         total_time = time.time() - start_time
         self.logger.info(
             f"Pool initialization completed in {total_time:.2f} seconds. "
-            f"Successfully initialized {self.sessions.qsize()}/{self.min_available_sessions_in_reserve} sessions "
+            f"Successfully initialized {successful_sessions}/{self.min_available_sessions_in_reserve} sessions "
             f"({completed} successful, {failed} failed)"
         )
         
@@ -327,6 +352,8 @@ class SessionPool:
         self._save_sessions_to_cache()
         cache_time = time.time() - cache_start
         self.logger.info(f"Session caching took {cache_time:.2f} seconds")
+        
+        return successful_sessions
     
     def _initialize_single_session(self, index):
         """Initialize a single session with retry mechanism"""
@@ -456,44 +483,19 @@ class SessionPool:
         self.start_health_checker()
 
 def test_session_pool():
-    """Test function to simulate session pool behavior"""
+    """Test function to initialize a single session"""
     import logging
     logging.basicConfig(level=logging.DEBUG)
     
-    pool = SessionPool(min_available_sessions_in_reserve=50)
-    pool.initialize_pool()
+    pool = SessionPool()
     
-    print("\n=== Initial State ===")
-    print(f"Pool size: {pool.get_pool_size()}")
-    print(f"Refill threshold: {pool.refill_threshold}")
+    print("\n=== Initializing Single Session ===")
+    success = pool._initialize_single_session(0)
+    print(f"Session initialization {'successful' if success else 'failed'}")
+    print(f"Current pool size: {pool.get_pool_size()}")
     
-    try:
-        # Get 40 sessions but don't return them right away
-        print("\n=== Getting 40 sessions ===")
-        sessions = pool.get_sessions(40)
-        print(f"Successfully got {len(sessions)} sessions")
-        print(f"Pool size after getting sessions: {pool.get_pool_size()}")
-        
-        # Wait to observe factory behavior
-        print("\n=== Waiting to observe factory behavior ===")
-        for i in range(6):
-            time.sleep(5)
-            print(f"Current pool size: {pool.get_pool_size()}")
-        
-        # Now return the sessions
-        print("\n=== Returning sessions ===")
-        pool.return_sessions(sessions)
-        print(f"Pool size after returning: {pool.get_pool_size()}")
-        
-        # Wait for final observation
-        print("\n=== Final observation period ===")
-        for i in range(4):
-            time.sleep(5)
-            print(f"Current pool size: {pool.get_pool_size()}")
-            
-    finally:
-        pool.shutdown()
-        print("\n=== Test completed ===")
+    pool.shutdown()
+    print("\n=== Test completed ===")
 
 if __name__ == "__main__":
     test_session_pool() 

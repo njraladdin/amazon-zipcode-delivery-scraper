@@ -27,7 +27,7 @@ import asyncio
 from queue import Queue
 
 # Configuration constants
-SAVE_OUTPUT = False  # Set to True to save files to output folder
+SAVE_OUTPUT = True  # Set to True to save files to output folder
 
 # Initialize colorama
 init(autoreset=True)

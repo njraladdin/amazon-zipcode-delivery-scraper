@@ -77,11 +77,12 @@ handle not having enough sessions in pool / fail to create more
 
 if we don't have enough available sessions, we return an error instead of 300 seconds timeout, done 
 
-create sessions dynamically if we don't have enough sessions ready 
-handle creating sessions errors, abort when having too many errors instead of keep trying to create more sessions 
+create sessions dynamically if we don't have enough sessions ready, done 
+added success rate checking whne creting sessions. abort and return an error to request when having too many errors instead of keep trying to create more sessions, done 
+abort and throw an error when failign to create enough sessions when starting the server, done 
 
 
-cached sessions 
+fix prodcut_details being included in every zipcode object 
 
 
 

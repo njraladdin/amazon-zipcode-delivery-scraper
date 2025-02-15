@@ -74,9 +74,27 @@ bq_client = None
 async def startup_event():
     global session_pool, bq_client
     session_pool = SessionPool()
-    session_pool.initialize_pool()
-    logger.info(f"Started server with {session_pool.get_pool_size()} pre-initialized sessions")
-    session_pool.start_background_workers()  # Start both factory and health checker
+    
+    # Initialize pool and check success rate
+    created_sessions = session_pool.initialize_pool()
+    
+    # Calculate success rate
+    success_rate = (created_sessions / INITIAL_POOL_SIZE) * 100
+    min_success_rate = 50  # Require at least 50% success rate
+    
+    if created_sessions < CONFIG.get("session_pool_refill_threshold", 100) or success_rate < min_success_rate:
+        error_msg = (
+            f"Failed to initialize sufficient Amazon sessions. "
+            f"Created {created_sessions}/{INITIAL_POOL_SIZE} sessions "
+            f"(Success rate: {success_rate:.1f}%). "
+            f"Minimum requirements: {CONFIG.get('session_pool_refill_threshold')} sessions with 50% success rate. "
+            "Aborting server startup."
+        )
+        logger.error(error_msg)
+        raise SystemExit(error_msg)
+    
+    logger.info(f"Started server with {created_sessions} pre-initialized sessions (Success rate: {success_rate:.1f}%)")
+    session_pool.start_background_workers()
     
     # Initialize BigQuery client only if enabled in config
     if CONFIG.get("allow_bigquery", False):
