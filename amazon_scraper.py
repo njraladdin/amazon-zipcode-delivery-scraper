@@ -27,7 +27,7 @@ import asyncio
 from queue import Queue
 
 # Configuration constants
-SAVE_OUTPUT = True  # Set to True to save files to output folder
+SAVE_OUTPUT = False  # Set to True to save files to output folder
 
 # Initialize colorama
 init(autoreset=True)
@@ -471,13 +471,12 @@ class AmazonScraper:
         try:
             self._log_info(f"Starting product info collection for ASIN: {asin} in zipcode: {zipcode}")
             
-            # Initialize final data object
+            # Initialize final data object - remove product_details
             final_data = {
                 "asin": asin,
                 "zip_code": zipcode,
                 "timestamp": int(time.time()),
-                "offers_data": None,
-                "product_details": self.product_details
+                "offers_data": None
             }
             
             # Get and parse offers pages

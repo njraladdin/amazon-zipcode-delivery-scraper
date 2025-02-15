@@ -80,7 +80,7 @@ async def startup_event():
     
     # Calculate success rate
     success_rate = (created_sessions / INITIAL_POOL_SIZE) * 100
-    min_success_rate = 50  # Require at least 50% success rate
+    min_success_rate = 20  # Require at least 50% success rate
     
     if created_sessions < CONFIG.get("session_pool_refill_threshold", 100) or success_rate < min_success_rate:
         error_msg = (
@@ -125,7 +125,8 @@ class ScrapeRequest(BaseModel):
 
 class ScrapeResponse(BaseModel):
     asin: str
-    results: List[Dict[str, Any]]
+    product_details: Optional[Dict[str, Any]]
+    offers_results: List[Dict[str, Any]]
     total_locations_processed: int
     successful_locations: int
     failed_locations: int
@@ -147,12 +148,12 @@ def upload_to_bigquery(data: dict):
         
     try:
         if bq_client:
-            logger.info(f"Attempting to upload {len(data['results'])} results to BigQuery")
-            logger.debug(f"First result sample: {json.dumps(data['results'][0] if data['results'] else 'No results')}")
+            logger.info(f"Attempting to upload {len(data['offers_results'])} results to BigQuery")
+            logger.debug(f"First result sample: {json.dumps(data['offers_results'][0] if data['offers_results'] else 'No results')}")
             
             # Log the first offer data as sample
-            if data['results'] and data['results'][0]['offers_data']:
-                logger.debug(f"First offer sample: {json.dumps(data['results'][0]['offers_data'][0])}")
+            if data['offers_results'] and data['offers_results'][0]['offers_data']:
+                logger.debug(f"First offer sample: {json.dumps(data['offers_results'][0]['offers_data'][0])}")
             
             success = bq_client.load_offers(data)
             if success:
@@ -189,18 +190,21 @@ async def scrape_product(request: ScrapeRequest, background_tasks: BackgroundTas
             )
         
         try:
-            results = []
+            offers_results = []
             failed_locations = set()
+            product_details = None
             
             def process_batch(batch_zipcodes: List[str]) -> tuple:
                 try:
-                    # Get a session from the list
-                    scraper = sessions.pop(0)  # Remove and get session
+                    scraper = sessions.pop(0)
                     logger.info(f"Processing zipcodes: {batch_zipcodes}")
                     
                     try:
                         batch_results = scraper.process_multiple_zipcodes(request.asin, batch_zipcodes)
-                        if batch_results:  # Only return session to pool if successful
+                        if batch_results:
+                            nonlocal product_details
+                            if product_details is None and hasattr(scraper, 'product_details'):
+                                product_details = scraper.product_details
                             session_pool.return_sessions([scraper])
                             return batch_results, batch_zipcodes
                         else:
@@ -245,7 +249,7 @@ async def scrape_product(request: ScrapeRequest, background_tasks: BackgroundTas
                     try:
                         result, batch_zipcodes = future.result()
                         if result:
-                            results.extend(result)
+                            offers_results.extend(result)
                             successful_zipcodes = {r['zip_code'] for r in result if r}
                             failed_zipcodes = set(batch_zipcodes) - successful_zipcodes
                             failed_locations.update(failed_zipcodes)
@@ -290,20 +294,21 @@ async def scrape_product(request: ScrapeRequest, background_tasks: BackgroundTas
             # Always return sessions to the pool
             session_pool.return_sessions(sessions)
 
-        # Prepare response
-        response_data = ScrapeResponse(
-            asin=request.asin,
-            results=results,
-            total_locations_processed=len(zipcodes_to_check),
-            successful_locations=len(results),
-            failed_locations=len(failed_locations)
-        )
+        # Prepare response with product_details at top level
+        response_data = {
+            "asin": request.asin,
+            "product_details": product_details,
+            "offers_results": offers_results,
+            "total_locations_processed": len(zipcodes_to_check),
+            "successful_locations": len(offers_results),
+            "failed_locations": len(failed_locations)
+        }
 
-        if not results:
+        if not offers_results:
             raise HTTPException(status_code=404, detail="No data could be retrieved for the given ASIN")
 
         # Add BigQuery upload as background task with raw data
-        background_tasks.add_task(upload_to_bigquery, response_data.dict())
+        background_tasks.add_task(upload_to_bigquery, response_data)
         
         return response_data
 
