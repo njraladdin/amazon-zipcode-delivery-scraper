@@ -122,8 +122,8 @@ class SessionPool:
                 self.logger.info("Health checker thread already running")
     
     def _session_health_checker(self):
-        """Background worker that checks sessions without removing them"""
-        CHECK_DELAY = 20 # Small delay between session checks
+        """Background worker that checks sessions and maintains pool size limit"""
+        CHECK_DELAY = 20  # Small delay between session checks
         
         while self.should_run:
             try:
@@ -131,8 +131,20 @@ class SessionPool:
                 with self.lock:
                     current_size = self.sessions.qsize()
                     sessions_snapshot = list(self.sessions.queue)  # Get internal queue list
+                    max_size = self.config.get("max_sessions_in_pool", 500)
                     
-                self.logger.debug(f"Starting health check cycle of {current_size} sessions")
+                    # If over max size, remove excess sessions
+                    if current_size > max_size:
+                        excess = current_size - max_size
+                        self.logger.info(f"Pool over max size ({current_size}/{max_size}). Removing {excess} sessions")
+                        for _ in range(excess):
+                            try:
+                                self.sessions.get_nowait()
+                                self.discarded_sessions_count += 1
+                            except Empty:
+                                break
+                
+                self.logger.debug(f"Starting health check cycle of {len(sessions_snapshot)} sessions")
                 
                 # Check each session
                 for session in sessions_snapshot:
@@ -303,7 +315,6 @@ class SessionPool:
                 self.logger.info(f"Progress: {total}/{self.min_available_sessions_in_reserve} "
                                f"(Success: {completed}, Failed: {failed})")
         
-        init_time = time.time() - start_time
         total_time = time.time() - start_time
         self.logger.info(
             f"Pool initialization completed in {total_time:.2f} seconds. "
@@ -319,7 +330,7 @@ class SessionPool:
     
     def _initialize_single_session(self, index):
         """Initialize a single session with retry mechanism"""
-        max_retries = 3
+        max_retries = 2
         retry_count = 0
         
         while retry_count < max_retries:
@@ -375,41 +386,69 @@ class SessionPool:
         return False
 
     def get_sessions(self, count):
-        """Get multiple sessions immediately, or raise exception if not enough available"""
-        current_size = self.sessions.qsize()
-        if current_size < count:
-            raise Exception(f"Not enough sessions available. Requested: {count}, Available: {current_size}")
-        
+        """Get requested sessions, creating new ones if needed"""
         sessions = []
-        try:
-            for _ in range(count):
+        current_size = self.sessions.qsize()
+        
+        # Try to get available sessions from pool first
+        while not self.sessions.empty() and len(sessions) < count:
+            try:
                 sessions.append(self.sessions.get_nowait())
+            except Empty:
+                break
+        
+        # If we need more sessions, create them
+        remaining = count - len(sessions)
+        if remaining > 0:
+            self.logger.info(f"Creating {remaining} new sessions on demand")
             
-            new_size = self.sessions.qsize()
-            if new_size < self.refill_threshold:
-                self.logger.info(f"Pool size ({new_size}) fell below refill threshold ({self.refill_threshold}). "
-                               f"Starting background factory.")
-                self.start_background_factory()
+            error_count = 0
+            success_count = 0
             
-            return sessions
-        except Empty:
-            # If we somehow couldn't get all sessions, return the ones we got
-            for session in sessions:
-                self.sessions.put(session)
-            raise Exception("Failed to get sessions - pool size changed during retrieval")
+            with ThreadPoolExecutor(max_workers=min(remaining, 20)) as executor:
+                futures = [
+                    executor.submit(self._initialize_single_session, i) 
+                    for i in range(remaining)
+                ]
+                
+                # Define thresholds
+                error_threshold = min(5, remaining // 2)  # 50% of remaining or at least 5 errors
+                min_success_rate = 0.2  # At least 20% success rate
+                
+                for future in futures:
+                    try:
+                        result = future.result()
+                        if result:
+                            sessions.append(result)
+                            success_count += 1
+                        else:
+                            error_count += 1
+                    except Exception as e:
+                        self.logger.error(f"Failed to create new session: {str(e)}")
+                        error_count += 1
+                    
+                    # Check if we should abort due to too many errors
+                    if error_count >= error_threshold:
+                        success_rate = success_count / (success_count + error_count)
+                        if success_rate < min_success_rate:
+                            self.logger.error(f"Aborting session creation: Too many errors ({error_count} errors, "
+                                            f"{success_count} successes, {success_rate:.1%} success rate)")
+                            raise Exception(f"Too many errors creating new sessions. Success rate: {success_rate:.1%}")
+        
+        if len(sessions) < count:
+            # If we still couldn't get enough sessions, raise error
+            raise Exception(f"Could not create enough sessions. Requested: {count}, Created: {len(sessions)}")
+        
+        return sessions
 
     def return_sessions(self, sessions):
-        """Return multiple sessions to the pool"""
-        valid_sessions = [s for s in sessions if s is not None]
-        discarded = len(sessions) - len(valid_sessions)
-        if discarded > 0:
-            self.discarded_sessions_count += discarded
-            self.logger.warning(f"Discarded {discarded} failed sessions. Total discarded: {self.discarded_sessions_count}")
+        """Return all valid sessions to pool"""
+        valid_sessions = [s for s in sessions if s and s.is_initialized]
         
         self.logger.info(f"Returning {len(valid_sessions)} sessions to pool. Current size: {self.sessions.qsize()}")
+        
         for session in valid_sessions:
             self.sessions.put(session)
-        self.logger.info(f"New pool size after returns: {self.sessions.qsize()}")
 
     def start_background_workers(self):
         """Start both background factory and health check threads"""

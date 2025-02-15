@@ -1,6 +1,7 @@
 {
     "max_concurrent_zipcode_scrapers": 50,
     "initial_session_pool_size": 5,
+    "max_sessions_in_pool": 500,
     "session_pool_refill_threshold": 3,
     "port": 8080,
     "allow_proxy": false,

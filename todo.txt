@@ -77,6 +77,12 @@ handle not having enough sessions in pool / fail to create more
 
 if we don't have enough available sessions, we return an error instead of 300 seconds timeout, done 
 
+create sessions dynamically if we don't have enough sessions ready 
+handle creating sessions errors, abort when having too many errors instead of keep trying to create more sessions 
+
+
+cached sessions 
+
 
 
 ---
