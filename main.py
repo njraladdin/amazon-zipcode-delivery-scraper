@@ -165,7 +165,10 @@ async def scrape_product(request: ScrapeRequest, background_tasks: BackgroundTas
             sessions = session_pool.get_sessions(needed_sessions)
             logger.info(f"Got {len(sessions)} sessions for processing")
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Session pool error: {str(e)}")
+            raise HTTPException(
+                status_code=503, 
+                detail=str(e)  # Will show "Not enough sessions available. Requested: X, Available: Y"
+            )
         
         try:
             results = []

@@ -37,6 +37,7 @@ reach 25 seconds:
 -pre-initialize pool of ready to use amazon sessions, where we just have to change proxy and go to product page, done 
 - manage cached sessions:  increase pool size to always have sessions ready to use, done 
 - add readme : setup project, done 
+
 feedback 
 ----
 fix price extraction, comma not seperated correctly, done 
@@ -60,10 +61,24 @@ add proxies setup guide, done
 lower failure rate, better handle sessions : 
 - discard session if it fails a batch, done 
 - continously recheck and refresh sessions (keep checkong one after one in the background so it doesnt take to omuch resources), done 
-
-
-
 parse product info, done 
 only parse product info once, not for all zipcodes (to keep under time limit), done 
-add tests to help developers understand project quicker 
+
+
+
+feedback 
+---
+handle too many errors in creating sessions 
+
+if we don't have any session ready
+
+handle not having enough sessions in pool / fail to create more 
+
+
+if we don't have enough available sessions, we return an error instead of 300 seconds timeout, done 
+
+
+
+---
+
 

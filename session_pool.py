@@ -374,18 +374,16 @@ class SessionPool:
         self.logger.error(f"Timeout waiting for {needed_sessions} sessions after {timeout} seconds")
         return False
 
-    def get_sessions(self, count, timeout=300):
-        """Get multiple sessions, waiting if necessary"""
-        if not self.wait_for_sessions(count, timeout):
-            raise Exception(f"Could not get {count} sessions within {timeout} seconds")
-            
+    def get_sessions(self, count):
+        """Get multiple sessions immediately, or raise exception if not enough available"""
+        current_size = self.sessions.qsize()
+        if current_size < count:
+            raise Exception(f"Not enough sessions available. Requested: {count}, Available: {current_size}")
+        
         sessions = []
         try:
-            current_size = self.sessions.qsize()
-            self.logger.info(f"Getting {count} sessions. Current pool size: {current_size}")
-            
             for _ in range(count):
-                sessions.append(self.sessions.get(timeout=timeout))
+                sessions.append(self.sessions.get_nowait())
             
             new_size = self.sessions.qsize()
             if new_size < self.refill_threshold:
@@ -398,7 +396,7 @@ class SessionPool:
             # If we somehow couldn't get all sessions, return the ones we got
             for session in sessions:
                 self.sessions.put(session)
-            raise Exception(f"Could not get {count} sessions, timeout occurred")
+            raise Exception("Failed to get sessions - pool size changed during retrieval")
 
     def return_sessions(self, sessions):
         """Return multiple sessions to the pool"""
